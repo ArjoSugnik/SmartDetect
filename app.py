@@ -14,10 +14,6 @@ import cv2
 import numpy as np
 import base64
 import math
-import leafmap.foliumap as leafmap
-from streamlit_folium import st_folium
-import folium
-from geopy.geocoders import Nominatim
 from skimage.metrics import structural_similarity as ssim
 
 # Page configuration - must be first Streamlit command
@@ -28,306 +24,375 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ========== EARTH PRO ENHANCED FUNCTIONS ==========
+# ========== IMPROVED EARTH PRO ANALYSIS FUNCTIONS ==========
 
-# ESRI Wayback Release IDs for specific years (Verified stable releases)
-WAYBACK_IDS = {
-    2026: "latest",
-    2025: "latest", 
-    2024: "latest",
-    2023: "13866",
-    2022: "13511",
-    2021: "12991",
-    2020: "24177",
-    2019: "2315",
-    2018: "1863",
-    2017: "15383",
-    2016: "15174",
-    2015: "14686",
-    2014: "10"
-}
+def merge_overlapping_boxes(changes, iou_threshold=0.3):
+    """Merge overlapping detection boxes using Non-Maximum Suppression"""
+    if not changes:
+        return []
+    
+    # Convert to format for NMS
+    boxes = []
+    for change in changes:
+        x = change['x']
+        y = change['y']
+        w = change['width']
+        h = change['height']
+        x1 = x - w/2
+        y1 = y - h/2
+        x2 = x + w/2
+        y2 = y + h/2
+        boxes.append([x1, y1, x2, y2, change['confidence']])
+    
+    boxes = np.array(boxes)
+    
+    # NMS
+    indices = cv2.dnn.NMSBoxes(
+        boxes[:, :4].tolist(),
+        boxes[:, 4].tolist(),
+        score_threshold=0.1,
+        nms_threshold=iou_threshold
+    )
+    
+    if len(indices) == 0:
+        return []
+    
+    # Flatten indices if needed
+    if isinstance(indices, tuple):
+        indices = indices[0] if len(indices) > 0 else []
+    indices = indices.flatten() if hasattr(indices, 'flatten') else indices
+    
+    merged_changes = []
+    for idx in indices:
+        idx = int(idx)
+        change = changes[idx]
+        merged_changes.append(change)
+    
+    return merged_changes
 
-def deg2num(lat_deg, lon_deg, zoom):
-    """Convert latitude/longitude to tile coordinates"""
-    lat_rad = math.radians(lat_deg)
-    n = 2.0 ** zoom
-    xtile = int((lon_deg + 180.0) / 360.0 * n)
-    ytile = int((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
-    return (xtile, ytile)
-
-def fetch_satellite_tile(xtile, ytile, zoom, service="google", year=None):
-    """Fetch a single satellite tile from the specified service"""
-    try:
-        if service == "google":
-            url = f"https://mt1.google.com/vt/lyrs=s&x={xtile}&y={ytile}&z={zoom}"
-        elif service == "esri":
-            if year and year in WAYBACK_IDS:
-                release_id = WAYBACK_IDS[year]
-                if release_id == "latest":
-                    url = f"https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{zoom}/{ytile}/{xtile}"
-                else:
-                    url = f"https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{release_id}/{zoom}/{ytile}/{xtile}"
-            else:
-                url = f"https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{zoom}/{ytile}/{xtile}"
-        else:
-            return None
+def detect_changes_comprehensive(img_old, img_new, min_area=50):
+    """
+    COMPREHENSIVE BUILDING DETECTION - Detects all buildings, large and small
+    Uses 6 different detection methods and combines them intelligently
+    """
+    old_arr = np.array(img_old)
+    new_arr = np.array(img_new)
+    
+    if old_arr.shape != new_arr.shape:
+        new_arr = cv2.resize(new_arr, (old_arr.shape[1], old_arr.shape[0]))
+    
+    # Convert to grayscale
+    gray_old = cv2.cvtColor(old_arr, cv2.COLOR_RGB2GRAY)
+    gray_new = cv2.cvtColor(new_arr, cv2.COLOR_RGB2GRAY)
+    
+    # Advanced lighting normalization using CLAHE
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8,8))
+    gray_old_norm = clahe.apply(gray_old)
+    gray_new_norm = clahe.apply(gray_new)
+    
+    all_changes = []
+    img_area = gray_new.shape[0] * gray_new.shape[1]
+    max_area = img_area * 0.35  # Maximum 35% of image
+    
+    # ===== METHOD 1: Multi-Scale Intensity Difference =====
+    diff_intensity = cv2.absdiff(gray_old_norm, gray_new_norm)
+    
+    # Use multiple thresholds to catch different change magnitudes
+    thresholds = [3, 6, 10, 15, 25]
+    for thresh_val in thresholds:
+        _, binary = cv2.threshold(diff_intensity, thresh_val, 255, cv2.THRESH_BINARY)
         
-        response = requests.get(url, stream=True, timeout=10)
-        if response.status_code == 200:
-            img = Image.open(response.raw).convert("RGB")
-            return img
-        else:
-            return None
-    except Exception as e:
-        print(f"Error fetching tile: {e}")
-        return None
-
-def fetch_multi_tile_image(lat, lon, zoom, service="google", year=None, tile_size=3):
-    """Fetch multiple tiles and stitch them together for higher resolution"""
-    center_x, center_y = deg2num(lat, lon, zoom)
-    half_size = tile_size // 2
-    tiles = []
+        # Minimal morphology to preserve details
+        kernel = np.ones((2, 2), np.uint8)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+        
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if min_area < area < max_area:
+                x, y, w, h = cv2.boundingRect(cnt)
+                mask = np.zeros(gray_new.shape, dtype=np.uint8)
+                cv2.drawContours(mask, [cnt], -1, 255, -1)
+                mean_diff = cv2.mean(diff_intensity, mask=mask)[0]
+                confidence = min(mean_diff / 60.0, 1.0)
+                
+                all_changes.append({
+                    "x": int(x + w/2), "y": int(y + h/2),
+                    "width": int(w), "height": int(h),
+                    "area": int(area),
+                    "confidence": float(max(0.20, confidence)),
+                    "method": f"intensity_t{thresh_val}"
+                })
     
-    for dy in range(-half_size, half_size + 1):
-        row = []
-        for dx in range(-half_size, half_size + 1):
-            tile = fetch_satellite_tile(center_x + dx, center_y + dy, zoom, service=service, year=year)
-            if tile:
-                row.append(tile)
-            else:
-                row.append(Image.new('RGB', (256, 256), color='gray'))
-        tiles.append(row)
+    # ===== METHOD 2: Edge Structure Detection =====
+    # Detect changes in building edges/outlines
+    edges_old = cv2.Canny(gray_old_norm, 15, 80)  # Very sensitive
+    edges_new = cv2.Canny(gray_new_norm, 15, 80)
+    diff_edges = cv2.absdiff(edges_old, edges_new)
     
-    tile_width = 256
-    tile_height = 256
-    full_width = tile_width * tile_size
-    full_height = tile_height * tile_size
-    stitched = Image.new('RGB', (full_width, full_height))
+    _, binary_edges = cv2.threshold(diff_edges, 10, 255, cv2.THRESH_BINARY)
+    kernel = np.ones((3, 3), np.uint8)
+    binary_edges = cv2.morphologyEx(binary_edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+    binary_edges = cv2.morphologyEx(binary_edges, cv2.MORPH_DILATE, kernel, iterations=1)
     
-    for i, row in enumerate(tiles):
-        for j, tile in enumerate(row):
-            stitched.paste(tile, (j * tile_width, i * tile_height))
+    contours, _ = cv2.findContours(binary_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    return stitched
-
-def detect_changes_opencv(img_old, img_new, min_area=500):
-    """Detect changes between two images using OpenCV"""
-    gray_old = cv2.cvtColor(np.array(img_old), cv2.COLOR_RGB2GRAY)
-    gray_new = cv2.cvtColor(np.array(img_new), cv2.COLOR_RGB2GRAY)
-    
-    if gray_old.shape != gray_new.shape:
-        gray_new = cv2.resize(gray_new, (gray_old.shape[1], gray_old.shape[0]))
-    
-    diff = cv2.absdiff(gray_old, gray_new)
-    blurred = cv2.GaussianBlur(diff, (5, 5), 0)
-    _, thresh = cv2.threshold(blurred, 30, 255, cv2.THRESH_BINARY)
-    
-    kernel = np.ones((5, 5), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-    
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    changes = []
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area > min_area:
+        if min_area < area < max_area:
             x, y, w, h = cv2.boundingRect(cnt)
-            changes.append({
-                "x": int(x),
-                "y": int(y),
-                "width": int(w),
-                "height": int(h),
+            mask = np.zeros(gray_new.shape, dtype=np.uint8)
+            cv2.drawContours(mask, [cnt], -1, 255, -1)
+            mean_diff = cv2.mean(diff_edges, mask=mask)[0]
+            confidence = min(mean_diff / 80.0, 1.0)
+            
+            all_changes.append({
+                "x": int(x + w/2), "y": int(y + h/2),
+                "width": int(w), "height": int(h),
                 "area": int(area),
-                "type": "Structural Change"
+                "confidence": float(max(0.35, confidence)),
+                "method": "edges"
             })
     
-    return changes
+    # ===== METHOD 3: RGB Color Change Detection =====
+    diff_color = cv2.absdiff(old_arr, new_arr)
+    diff_color_gray = cv2.cvtColor(diff_color, cv2.COLOR_RGB2GRAY)
+    
+    _, binary_color = cv2.threshold(diff_color_gray, 8, 255, cv2.THRESH_BINARY)
+    kernel = np.ones((2, 2), np.uint8)
+    binary_color = cv2.morphologyEx(binary_color, cv2.MORPH_CLOSE, kernel, iterations=1)
+    
+    contours, _ = cv2.findContours(binary_color, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if min_area < area < max_area:
+            x, y, w, h = cv2.boundingRect(cnt)
+            mask = np.zeros(gray_new.shape, dtype=np.uint8)
+            cv2.drawContours(mask, [cnt], -1, 255, -1)
+            mean_diff = cv2.mean(diff_color_gray, mask=mask)[0]
+            confidence = min(mean_diff / 70.0, 1.0)
+            
+            all_changes.append({
+                "x": int(x + w/2), "y": int(y + h/2),
+                "width": int(w), "height": int(h),
+                "area": int(area),
+                "confidence": float(max(0.25, confidence)),
+                "method": "color"
+            })
+    
+    # ===== METHOD 4: Gradient/Texture Detection =====
+    # Detects texture changes (important for buildings)
+    sobelx_old = cv2.Sobel(gray_old_norm, cv2.CV_64F, 1, 0, ksize=3)
+    sobely_old = cv2.Sobel(gray_old_norm, cv2.CV_64F, 0, 1, ksize=3)
+    sobelx_new = cv2.Sobel(gray_new_norm, cv2.CV_64F, 1, 0, ksize=3)
+    sobely_new = cv2.Sobel(gray_new_norm, cv2.CV_64F, 0, 1, ksize=3)
+    
+    gradient_old = np.sqrt(sobelx_old**2 + sobely_old**2)
+    gradient_new = np.sqrt(sobelx_new**2 + sobely_new**2)
+    gradient_diff = np.abs(gradient_new - gradient_old).astype(np.uint8)
+    
+    _, binary_grad = cv2.threshold(gradient_diff, 8, 255, cv2.THRESH_BINARY)
+    kernel = np.ones((3, 3), np.uint8)
+    binary_grad = cv2.morphologyEx(binary_grad, cv2.MORPH_CLOSE, kernel, iterations=2)
+    
+    contours, _ = cv2.findContours(binary_grad, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if min_area < area < max_area:
+            x, y, w, h = cv2.boundingRect(cnt)
+            mask = np.zeros(gray_new.shape, dtype=np.uint8)
+            cv2.drawContours(mask, [cnt], -1, 255, -1)
+            mean_diff = cv2.mean(gradient_diff, mask=mask)[0]
+            confidence = min(mean_diff / 80.0, 1.0)
+            
+            all_changes.append({
+                "x": int(x + w/2), "y": int(y + h/2),
+                "width": int(w), "height": int(h),
+                "area": int(area),
+                "confidence": float(max(0.30, confidence)),
+                "method": "gradient"
+            })
+    
+    # ===== METHOD 5: Adaptive Thresholding =====
+    # Catches local variations
+    adaptive = cv2.adaptiveThreshold(
+        diff_intensity, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 13, -2
+    )
+    kernel = np.ones((2, 2), np.uint8)
+    adaptive = cv2.morphologyEx(adaptive, cv2.MORPH_CLOSE, kernel, iterations=1)
+    
+    contours, _ = cv2.findContours(adaptive, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if min_area < area < max_area:
+            x, y, w, h = cv2.boundingRect(cnt)
+            mask = np.zeros(gray_new.shape, dtype=np.uint8)
+            cv2.drawContours(mask, [cnt], -1, 255, -1)
+            mean_diff = cv2.mean(diff_intensity, mask=mask)[0]
+            confidence = min(mean_diff / 70.0, 1.0)
+            
+            all_changes.append({
+                "x": int(x + w/2), "y": int(y + h/2),
+                "width": int(w), "height": int(h),
+                "area": int(area),
+                "confidence": float(max(0.25, confidence)),
+                "method": "adaptive"
+            })
+    
+    # ===== METHOD 6: Laplacian (Detail Detection) =====
+    # Excellent for catching fine building details
+    lap_old = cv2.Laplacian(gray_old_norm, cv2.CV_64F)
+    lap_new = cv2.Laplacian(gray_new_norm, cv2.CV_64F)
+    lap_diff = np.abs(lap_new - lap_old).astype(np.uint8)
+    
+    _, binary_lap = cv2.threshold(lap_diff, 5, 255, cv2.THRESH_BINARY)
+    kernel = np.ones((2, 2), np.uint8)
+    binary_lap = cv2.morphologyEx(binary_lap, cv2.MORPH_CLOSE, kernel, iterations=1)
+    
+    contours, _ = cv2.findContours(binary_lap, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if min_area < area < max_area:
+            x, y, w, h = cv2.boundingRect(cnt)
+            mask = np.zeros(gray_new.shape, dtype=np.uint8)
+            cv2.drawContours(mask, [cnt], -1, 255, -1)
+            mean_diff = cv2.mean(lap_diff, mask=mask)[0]
+            confidence = min(mean_diff / 50.0, 1.0)
+            
+            all_changes.append({
+                "x": int(x + w/2), "y": int(y + h/2),
+                "width": int(w), "height": int(h),
+                "area": int(area),
+                "confidence": float(max(0.25, confidence)),
+                "method": "laplacian"
+            })
+    
+    # Merge overlapping detections
+    merged_changes = merge_overlapping_boxes(all_changes, iou_threshold=0.4)
+    
+    return merged_changes
 
-def detect_changes_yolo(img_old, img_new, model, min_confidence=0.5):
-    """Detect new structures using YOLOv8 object detection"""
-    results_old = model(img_old)[0]
-    results_new = model(img_new)[0]
+def detect_changes_yolo(img_old, img_new, model, min_confidence=0.15):
+    """Enhanced YOLO detection with lower confidence threshold for buildings"""
+    results_old = model(img_old, conf=min_confidence)[0]
+    results_new = model(img_new, conf=min_confidence)[0]
+    
+    # Extract building-related classes
+    building_classes = ['building', 'house', 'car', 'truck', 'bus', 'train']
     
     boxes_old = []
     if results_old.boxes is not None:
         for box in results_old.boxes:
-            if float(box.conf[0]) >= min_confidence:
+            cls_id = int(box.cls[0])
+            cls_name = model.names[cls_id].lower()
+            conf = float(box.conf[0])
+            
+            if conf >= min_confidence:
                 boxes_old.append({
                     'xyxy': box.xyxy[0].tolist(),
-                    'class': int(box.cls[0]),
-                    'conf': float(box.conf[0])
+                    'class': cls_name,
+                    'conf': conf
                 })
     
     boxes_new = []
     if results_new.boxes is not None:
         for box in results_new.boxes:
-            if float(box.conf[0]) >= min_confidence:
+            cls_id = int(box.cls[0])
+            cls_name = model.names[cls_id].lower()
+            conf = float(box.conf[0])
+            
+            if conf >= min_confidence:
                 boxes_new.append({
                     'xyxy': box.xyxy[0].tolist(),
-                    'class': int(box.cls[0]),
-                    'conf': float(box.conf[0])
+                    'class': cls_name,
+                    'conf': conf
                 })
     
     new_objects = []
     for box_new in boxes_new:
         is_new = True
-        x_new, y_new = box_new['xyxy'][0], box_new['xyxy'][1]
+        x_new_center = (box_new['xyxy'][0] + box_new['xyxy'][2]) / 2
+        y_new_center = (box_new['xyxy'][1] + box_new['xyxy'][3]) / 2
         
         for box_old in boxes_old:
-            x_old, y_old = box_old['xyxy'][0], box_old['xyxy'][1]
-            if abs(x_new - x_old) < 50 and abs(y_new - y_old) < 50:
+            x_old_center = (box_old['xyxy'][0] + box_old['xyxy'][2]) / 2
+            y_old_center = (box_old['xyxy'][1] + box_old['xyxy'][3]) / 2
+            
+            # Check if same object (within tolerance)
+            distance = np.sqrt((x_new_center - x_old_center)**2 + (y_new_center - y_old_center)**2)
+            if distance < 30:  # Reduced tolerance
                 is_new = False
                 break
         
         if is_new:
-            class_name = model.names[box_new['class']]
             x0, y0, x1, y1 = box_new['xyxy']
             new_objects.append({
-                "x": int(x0),
-                "y": int(y0),
+                "x": int((x0 + x1) / 2),
+                "y": int((y0 + y1) / 2),
                 "width": int(x1 - x0),
                 "height": int(y1 - y0),
+                "area": int((x1 - x0) * (y1 - y0)),
                 "confidence": box_new['conf'],
-                "class": class_name,
-                "type": f"New {class_name.capitalize()}"
+                "class": box_new['class'],
+                "type": f"New {box_new['class'].capitalize()}"
             })
     
     return new_objects
 
 def classify_change_type(change, year_old, year_new):
-    """Classify the type of change detected"""
+    """Classify the type of change with improved categorization"""
+    if 'type' in change and change['type']:
+        return change['type']
+    
     if 'class' in change:
         obj_type = change['class'].lower()
         if obj_type in ['building', 'house']:
-            return f"New Construction ({year_old}-{year_new})"
+            return "New Building"
         elif obj_type in ['road', 'street']:
-            return f"Road Development ({year_old}-{year_new})"
-        elif obj_type in ['tree', 'plant', 'vegetation']:
-            return f"Vegetation Growth ({year_old}-{year_new})"
-        elif obj_type in ['car', 'truck', 'vehicle']:
-            return f"Increased Activity ({year_old}-{year_new})"
+            return "New Road"
+        elif obj_type in ['tree', 'plant', 'vegetation', 'potted plant']:
+            return "Vegetation Growth"
+        elif obj_type in ['car', 'truck', 'bus', 'vehicle']:
+            return "New Vehicle/Structure"
         else:
-            return f"New Structure: {obj_type.capitalize()} ({year_old}-{year_new})"
+            return f"New {obj_type.capitalize()}"
+    
+    # Classify by size and shape
+    area = change.get('area', change.get('width', 0) * change.get('height', 0))
+    width = change.get('width', 0)
+    height = change.get('height', 0)
+    aspect_ratio = width / height if height > 0 else 1
+    
+    if area > 8000:
+        if aspect_ratio > 2.5:
+            return "New Road/Highway"
+        else:
+            return "New Large Building"
+    elif area > 3000:
+        if aspect_ratio > 3:
+            return "New Road Segment"
+        elif 0.6 < aspect_ratio < 1.5:
+            return "New Medium Building"
+        else:
+            return "New Structure"
+    elif area > 800:
+        if aspect_ratio > 3.5:
+            return "New Path/Lane"
+        else:
+            return "New Small Building"
+    elif area > 200:
+        if aspect_ratio > 4:
+            return "New Narrow Path"
+        else:
+            return "New Small Shop/Structure"
     else:
-        return f"Terrain Change ({year_old}-{year_new})"
-
-def create_annotated_comparison(img_old, img_new, changes, year_old, year_new):
-    """Create side-by-side comparison with changes highlighted"""
-    if img_old.size != img_new.size:
-        img_new = img_new.resize(img_old.size)
-    
-    img_annotated = img_new.copy()
-    draw = ImageDraw.Draw(img_annotated)
-    
-    for change in changes:
-        x, y, w, h = change['x'], change['y'], change['width'], change['height']
-        draw.rectangle([x, y, x + w, y + h], outline="red", width=3)
-        label = change.get('type', 'Change')
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
-        except:
-            font = ImageFont.load_default()
-        draw.text((x, y - 15), label, fill="red", font=font)
-    
-    width, height = img_old.size
-    combined = Image.new('RGB', (width * 2 + 10, height), color='white')
-    combined.paste(img_old, (0, 0))
-    combined.paste(img_annotated, (width + 10, 0))
-    
-    draw_combined = ImageDraw.Draw(combined)
-    try:
-        font_label = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-    except:
-        font_label = ImageFont.load_default()
-    
-    draw_combined.text((20, 20), f"Year: {year_old}", fill="yellow", font=font_label)
-    draw_combined.text((width + 30, 20), f"Year: {year_new}", fill="yellow", font=font_label)
-    
-    return combined, img_annotated
-
-def generate_change_analysis_csv(changes, year_old, year_new, location_name):
-    """Generate CSV report of detected changes"""
-    if not changes:
-        df = pd.DataFrame({'Message': ['No significant changes detected between the selected years.']})
-    else:
-        df = pd.DataFrame(changes)
-        df['Location'] = location_name
-        df['Year_Old'] = year_old
-        df['Year_New'] = year_new
-        df['Analysis_Date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
-        cols = ['Location', 'Year_Old', 'Year_New', 'x', 'y', 'width', 'height']
-        if 'area' in df.columns:
-            cols.append('area')
-        if 'type' in df.columns:
-            cols.append('type')
-        if 'class' in df.columns:
-            cols.append('class')
-        if 'confidence' in df.columns:
-            cols.append('confidence')
-        cols.append('Analysis_Date')
-        df = df[cols]
-    
-    return df
-
-def generate_analysis_package(img_old, img_new, img_comparison, img_annotated, 
-                               changes_df, year_old, year_new, location_name, 
-                               ssim_score):
-    """Generate a ZIP package with all analysis results"""
-    zip_buffer = io.BytesIO()
-    
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        img_old_bytes = io.BytesIO()
-        img_old.save(img_old_bytes, format='PNG')
-        zipf.writestr(f'{location_name}_{year_old}.png', img_old_bytes.getvalue())
-        
-        img_new_bytes = io.BytesIO()
-        img_new.save(img_new_bytes, format='PNG')
-        zipf.writestr(f'{location_name}_{year_new}.png', img_new_bytes.getvalue())
-        
-        img_comparison_bytes = io.BytesIO()
-        img_comparison.save(img_comparison_bytes, format='PNG')
-        zipf.writestr(f'{location_name}_comparison_{year_old}_vs_{year_new}.png', img_comparison_bytes.getvalue())
-        
-        img_annotated_bytes = io.BytesIO()
-        img_annotated.save(img_annotated_bytes, format='PNG')
-        zipf.writestr(f'{location_name}_{year_new}_annotated.png', img_annotated_bytes.getvalue())
-        
-        csv_data = changes_df.to_csv(index=False)
-        zipf.writestr(f'{location_name}_changes_{year_old}_to_{year_new}.csv', csv_data)
-        
-        excel_buffer = io.BytesIO()
-        changes_df.to_excel(excel_buffer, index=False, engine='openpyxl')
-        zipf.writestr(f'{location_name}_changes_{year_old}_to_{year_new}.xlsx', excel_buffer.getvalue())
-        
-        summary = f"""SMARTDETECT EARTH PRO ANALYSIS REPORT
-======================================
-
-Location: {location_name}
-Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-COMPARISON PERIOD
------------------
-Start Year: {year_old}
-End Year: {year_new}
-Duration: {year_new - year_old} years
-
-SIMILARITY ANALYSIS
--------------------
-Structural Similarity Index (SSIM): {ssim_score:.2%}
-Change Magnitude: {(1 - ssim_score) * 100:.2f}%
-
-DETECTED CHANGES
-----------------
-Total Changes: {len(changes_df)}
-
-Generated by SmartDetect Earth Pro Analysis
-"""
-        zipf.writestr('README.txt', summary)
-    
-    zip_buffer.seek(0)
-    return zip_buffer
+        return "Minor Construction"
 
 # ========== ORIGINAL SMARTDETECT FUNCTIONS ==========
 
@@ -417,17 +482,6 @@ def detect_stains_opencv(image):
                 "class": "stain/discoloration"
             })
     return anomalies
-
-def get_location_coords(address):
-    """Get latitude and longitude from address"""
-    try:
-        geolocator = Nominatim(user_agent="smart_detect_app")
-        location = geolocator.geocode(address)
-        if location:
-            return location.latitude, location.longitude
-        return None
-    except Exception:
-        return None
 
 def compare_images_ssim(img1, img2):
     """Compare two images using SSIM and return score and difference map"""
@@ -992,202 +1046,122 @@ with tab3:
             st.video(uploaded_video)
             st.info("Video processing feature - Install opencv-python and ffmpeg to enable")
 
-# ---------- Tab 4: EARTH PRO ANALYSIS (ENHANCED) ----------
+# ---------- Tab 4: IMPROVED EARTH PRO ANALYSIS ----------
 with tab4:
-    st.markdown("### 🌍 Earth Pro Satellite Analysis")
-    st.info("🛰️ **Compare REAL satellite imagery across different years.** Select any location worldwide, choose two years, and let AI detect all changes!")
+    st.markdown("### 🌍 Google Earth Pro Image Comparison - ENHANCED")
     
-    # Initialize session state
-    if "map_center" not in st.session_state:
-        st.session_state.map_center = [40.7128, -74.0060]  # New York default
-    if "map_zoom" not in st.session_state:
-        st.session_state.map_zoom = 14
-
-    # ==================== STEP 1: LOCATION SELECTION ====================
+    st.info("""
+    📸 **How to use this feature:**
+    
+    1. Open **Google Earth Pro** on your computer
+    2. Navigate to the area you want to analyze
+    3. Take a **screenshot** of the area from an earlier year (use the time slider)
+    4. Take another **screenshot** of the **same exact area** from a recent year
+    5. Upload both screenshots below
+    
+    **🎯 Enhanced Detection:** This improved version uses 6 different detection algorithms to catch ALL building changes - from tiny shops to large commercial buildings!
+    """)
+    
     st.markdown("---")
-    st.markdown("### 📍 Step 1: Select Location")
     
-    col_search, col_coords = st.columns([2, 1])
+    # Upload sections
+    col_upload1, col_upload2 = st.columns(2)
     
-    with col_search:
-        search_address = st.text_input(
-            "🔍 Search for a location",
-            placeholder="e.g., Times Square New York, Burj Khalifa Dubai, Eiffel Tower Paris",
-            help="Enter any address, landmark, or place name"
+    with col_upload1:
+        st.markdown("### 📤 Upload Earlier Year Image")
+        st.caption("Upload a Google Earth Pro screenshot from an earlier year")
+        earlier_image = st.file_uploader(
+            "Choose earlier year image",
+            type=["jpg", "jpeg", "png"],
+            key="earth_earlier",
+            help="Screenshot from Google Earth Pro - earlier year"
         )
-        
-        col_search_btn, col_reset = st.columns(2)
-        
-        with col_search_btn:
-            if st.button("🔍 Find Location", use_container_width=True):
-                if search_address:
-                    with st.spinner("Searching for location..."):
-                        coords = get_location_coords(search_address)
-                        if coords:
-                            st.session_state.map_center = list(coords)
-                            st.session_state.map_zoom = 16
-                            st.success(f"✅ Found: {search_address}")
-                            st.success(f"📍 Coordinates: {coords[0]:.6f}, {coords[1]:.6f}")
-                        else:
-                            st.error("❌ Location not found. Try a different search term.")
-                else:
-                    st.warning("Please enter a location to search")
-        
-        with col_reset:
-            if st.button("🔄 Reset to New York", use_container_width=True):
-                st.session_state.map_center = [40.7128, -74.0060]
-                st.session_state.map_zoom = 14
-                st.success("Reset to New York City")
+        if earlier_image:
+            img_earlier = Image.open(earlier_image).convert("RGB")
+            st.image(img_earlier, caption="Earlier Year (Baseline)", use_container_width=True)
     
-    with col_coords:
-        st.markdown("**Current Center:**")
-        st.code(f"Lat: {st.session_state.map_center[0]:.6f}\nLon: {st.session_state.map_center[1]:.6f}")
-        st.markdown(f"**Zoom Level:** {st.session_state.map_zoom}")
-    
-    # ==================== INTERACTIVE MAP ====================
-    st.markdown("---")
-    st.markdown("### 🗺️ Navigate the Map")
-    st.info("👆 **Navigate:** Drag to pan, scroll to zoom. The analysis will use the center point of the map view.")
-    
-    # Create folium map
-    m = leafmap.Map(
-        center=st.session_state.map_center,
-        zoom=st.session_state.map_zoom,
-        draw_control=False,
-        measure_control=False,
-        fullscreen_control=True,
-        attribution_control=True
-    )
-    
-    # Add satellite basemap
-    m.add_basemap("SATELLITE")
-    
-    # Add center marker
-    folium.Marker(
-        st.session_state.map_center,
-        popup="Analysis Center Point",
-        tooltip="This point will be analyzed",
-        icon=folium.Icon(color='red', icon='crosshairs', prefix='fa')
-    ).add_to(m)
-    
-    # Display map
-    map_output = st_folium(
-        m,
-        width=1200,
-        height=500,
-        returned_objects=["center", "zoom"],
-        key="earth_pro_map"
-    )
-    
-    # Update session state from map
-    if map_output and map_output.get('center'):
-        st.session_state.map_center = [map_output['center']['lat'], map_output['center']['lng']]
-    if map_output and map_output.get('zoom'):
-        st.session_state.map_zoom = map_output['zoom']
-    
-    # ==================== STEP 2: YEAR SELECTION ====================
-    st.markdown("---")
-    st.markdown("### 📅 Step 2: Select Years for Comparison")
-    
-    col_year1, col_year2, col_zoom = st.columns(3)
-    
-    with col_year1:
-        year_old = st.selectbox("📆 Earlier Year (Baseline)", options=list(range(2014, 2027)), index=0)
-    
-    with col_year2:
-        year_new = st.selectbox("📆 Recent Year (Current)", options=list(range(2014, 2027)), index=len(list(range(2014, 2027))) - 1)
-    
-    with col_zoom:
-        analysis_zoom = st.slider("🔍 Analysis Zoom Level", min_value=12, max_value=18, value=st.session_state.map_zoom)
-    
-    # Validate year selection
-    if year_new <= year_old:
-        st.error("⚠️ Recent year must be later than earlier year!")
-        year_valid = False
-    else:
-        st.success(f"✅ Analysis Period: **{year_old}** → **{year_new}** ({year_new - year_old} years)")
-        year_valid = True
-    
-    # ==================== STEP 3: ANALYSIS SETTINGS ====================
-    st.markdown("---")
-    st.markdown("### ⚙️ Step 3: Analysis Settings")
-    
-    col_method, col_settings = st.columns(2)
-    
-    with col_method:
-        analysis_method = st.radio(
-            "Detection Method",
-            ["🔬 AI Object Detection (YOLO)", "🖼️ Image Difference (OpenCV)", "🤖 Combined (AI + Image Diff)"],
-            index=2
+    with col_upload2:
+        st.markdown("### 📤 Upload Recent Year Image")
+        st.caption("Upload a Google Earth Pro screenshot from a recent year")
+        recent_image = st.file_uploader(
+            "Choose recent year image",
+            type=["jpg", "jpeg", "png"],
+            key="earth_recent",
+            help="Screenshot from Google Earth Pro - recent year"
         )
+        if recent_image:
+            img_recent = Image.open(recent_image).convert("RGB")
+            st.image(img_recent, caption="Recent Year (Current)", use_container_width=True)
     
-    with col_settings:
-        min_change_area = st.slider("Minimum Change Area (pixels²)", min_value=100, max_value=5000, value=500, step=100)
+    # Analysis settings and button
+    if earlier_image and recent_image:
+        st.markdown("---")
+        st.markdown("#### ⚙️ Enhanced Analysis Settings")
         
-        if "AI" in analysis_method or "Combined" in analysis_method:
-            yolo_confidence = st.slider("AI Detection Confidence (%)", min_value=30, max_value=95, value=50)
-    
-    # ==================== STEP 4: RUN ANALYSIS ====================
-    st.markdown("---")
-    st.markdown("### 🚀 Step 4: Run Analysis")
-    
-    col_analyze, col_info = st.columns([1, 2])
-    
-    with col_analyze:
-        analyze_button = st.button("🔍 Analyze Location Changes", type="primary", use_container_width=True, disabled=not year_valid)
-    
-    with col_info:
-        if year_valid:
-            st.info(f"📊 Ready to analyze {year_new - year_old} years of changes")
-        else:
-            st.warning("⚠️ Please select valid years")
-    
-    # ==================== ANALYSIS EXECUTION ====================
-    if analyze_button and year_valid:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        col_settings1, col_settings2, col_settings3 = st.columns(3)
         
-        try:
-            status_text.text("📡 Fetching satellite imagery...")
-            progress_bar.progress(10)
+        with col_settings1:
+            min_change_area = st.slider(
+                "Minimum Building Size (pixels²)", 
+                min_value=10, 
+                max_value=500, 
+                value=50,
+                step=10,
+                help="Lower = Detects smaller buildings. Recommended: 30-80"
+            )
+        
+        with col_settings2:
+            yolo_confidence = st.slider(
+                "AI Confidence (%)", 
+                min_value=10, 
+                max_value=70, 
+                value=15,
+                help="Lower = More detections. Recommended: 15-25%"
+            )
+        
+        with col_settings3:
+            use_yolo = st.checkbox(
+                "Enable YOLO AI",
+                value=True,
+                help="Use deep learning for building detection"
+            )
+        
+        st.markdown("---")
+        
+        # Analyze button
+        if st.button("🔍 Analyze Changes (Enhanced)", type="primary", use_container_width=True):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-            lat, lon = st.session_state.map_center
-            
-            status_text.text(f"🛰️ Downloading {year_old} imagery...")
-            img_old = fetch_multi_tile_image(lat, lon, analysis_zoom, service="esri", year=year_old, tile_size=3)
-            progress_bar.progress(30)
-            
-            status_text.text(f"🛰️ Downloading {year_new} imagery...")
-            if year_new >= 2024:
-                img_new = fetch_multi_tile_image(lat, lon, analysis_zoom, service="google", tile_size=3)
-            else:
-                img_new = fetch_multi_tile_image(lat, lon, analysis_zoom, service="esri", year=year_new, tile_size=3)
-            progress_bar.progress(50)
-            
-            if not img_old or not img_new:
-                st.error("❌ Failed to fetch imagery. Try different location/zoom.")
-                progress_bar.empty()
-                status_text.empty()
-            else:
-                if img_old.size != img_new.size:
-                    img_new = img_new.resize(img_old.size)
+            try:
+                # Load images
+                status_text.text("📸 Loading images...")
+                img_old = Image.open(earlier_image).convert("RGB")
+                img_new = Image.open(recent_image).convert("RGB")
+                progress_bar.progress(10)
                 
-                status_text.text("📊 Calculating structural similarity...")
+                # Resize if needed
+                if img_old.size != img_new.size:
+                    status_text.text("📐 Resizing images to match...")
+                    img_new = img_new.resize(img_old.size)
+                progress_bar.progress(15)
+                
+                # Calculate similarity
+                status_text.text("📊 Calculating image similarity...")
                 ssim_score, diff_map, thresh_map = compare_images_ssim(img_old, img_new)
+                progress_bar.progress(25)
+                
+                # Enhanced OpenCV detection with 6 methods
+                status_text.text("🔬 Running comprehensive computer vision analysis (6 methods)...")
+                opencv_changes = detect_changes_comprehensive(img_old, img_new, min_area=min_change_area)
                 progress_bar.progress(60)
                 
-                all_changes = []
+                st.info(f"✅ Computer Vision detected {len(opencv_changes)} changes")
                 
-                if "Image Difference" in analysis_method or "Combined" in analysis_method:
-                    status_text.text("🔬 Detecting changes using image analysis...")
-                    opencv_changes = detect_changes_opencv(img_old, img_new, min_area=min_change_area)
-                    for change in opencv_changes:
-                        change['type'] = classify_change_type(change, year_old, year_new)
-                    all_changes.extend(opencv_changes)
-                    progress_bar.progress(75)
-                
-                if "AI Object Detection" in analysis_method or "Combined" in analysis_method:
-                    status_text.text("🤖 Running AI object detection...")
+                # YOLO detection (optional)
+                yolo_changes = []
+                if use_yolo:
+                    status_text.text("🤖 Running deep learning (YOLO) analysis...")
                     
                     @st.cache_resource
                     def load_yolo_model():
@@ -1195,178 +1169,226 @@ with tab4:
                     
                     model = load_yolo_model()
                     yolo_changes = detect_changes_yolo(img_old, img_new, model, min_confidence=yolo_confidence / 100)
+                    st.info(f"✅ YOLO AI detected {len(yolo_changes)} new objects")
+                
+                progress_bar.progress(80)
+                
+                # Combine all changes
+                all_changes = opencv_changes + yolo_changes
+                
+                # Classify changes
+                status_text.text("🏷️ Classifying detected changes...")
+                for change in all_changes:
+                    if 'type' not in change or not change.get('type'):
+                        change['type'] = classify_change_type(change, "Earlier", "Recent")
+                progress_bar.progress(90)
+                
+                # Create annotated image
+                status_text.text("🎨 Creating annotated visualization...")
+                img_annotated = img_new.copy()
+                draw = ImageDraw.Draw(img_annotated)
+                
+                # Try to load font
+                try:
+                    font = ImageFont.truetype("arial.ttf", 13)
+                    font_small = ImageFont.truetype("arial.ttf", 11)
+                except:
+                    font = ImageFont.load_default()
+                    font_small = ImageFont.load_default()
+                
+                # Color coding
+                def get_box_color(confidence):
+                    if confidence >= 0.8:
+                        return "#00ff00"  # Green
+                    elif confidence >= 0.5:
+                        return "#ffff00"  # Yellow
+                    else:
+                        return "#ff6600"  # Orange
+                
+                # Draw boxes
+                for idx, change in enumerate(all_changes):
+                    x = int(change['x'])
+                    y = int(change['y'])
+                    w = int(change['width'])
+                    h = int(change['height'])
+                    conf = change.get('confidence', 0.5)
+                    change_type = change.get('type', 'Change')
                     
-                    for change in yolo_changes:
-                        change['type'] = classify_change_type(change, year_old, year_new)
-                    all_changes.extend(yolo_changes)
-                    progress_bar.progress(85)
+                    x0 = int(x - w / 2)
+                    y0 = int(y - h / 2)
+                    x1 = int(x + w / 2)
+                    y1 = int(y + h / 2)
+                    
+                    color = get_box_color(conf)
+                    
+                    # Draw box
+                    draw.rectangle([x0, y0, x1, y1], outline=color, width=3)
+                    
+                    # Draw label
+                    label_text = f"{change_type}"
+                    conf_text = f"{conf*100:.0f}%"
+                    
+                    # Background for text
+                    try:
+                        bbox = draw.textbbox((x0, y0 - 28), label_text, font=font)
+                        draw.rectangle([bbox[0]-2, bbox[1]-2, bbox[2]+2, bbox[3]+2], fill=(0, 0, 0, 200))
+                        draw.text((x0, y0 - 28), label_text, fill=color, font=font)
+                        draw.text((x0, y0 - 14), conf_text, fill="white", font=font_small)
+                    except:
+                        draw.text((x0, y0 - 20), f"{label_text} {conf_text}", fill=color)
                 
-                status_text.text("🎨 Creating visualizations...")
-                
-                location_name = search_address if search_address else f"Location_{lat:.4f}_{lon:.4f}"
-                location_name = "".join(c for c in location_name if c.isalnum() or c in (' ', '-', '_')).replace(' ', '_')
-                
-                img_comparison, img_annotated = create_annotated_comparison(img_old, img_new, all_changes, year_old, year_new)
                 progress_bar.progress(95)
                 
-                status_text.text("📋 Generating reports...")
-                changes_df = generate_change_analysis_csv(all_changes, year_old, year_new, location_name)
-                
-                analysis_package = generate_analysis_package(
-                    img_old, img_new, img_comparison, img_annotated,
-                    changes_df, year_old, year_new, location_name, ssim_score
-                )
+                # Store results
+                st.session_state.earth_results = {
+                    'img_old': img_old,
+                    'img_new': img_new,
+                    'img_annotated': img_annotated,
+                    'all_changes': all_changes,
+                    'ssim_score': ssim_score,
+                    'opencv_count': len(opencv_changes),
+                    'yolo_count': len(yolo_changes)
+                }
                 
                 progress_bar.progress(100)
                 status_text.text("✅ Analysis complete!")
                 
-                st.session_state.earth_results = {
-                    'img_old': img_old,
-                    'img_new': img_new,
-                    'img_comparison': img_comparison,
-                    'img_annotated': img_annotated,
-                    'changes_df': changes_df,
-                    'all_changes': all_changes,
-                    'ssim_score': ssim_score,
-                    'year_old': year_old,
-                    'year_new': year_new,
-                    'location_name': location_name,
-                    'analysis_package': analysis_package
-                }
-                
                 st.balloons()
-                st.success(f"🎉 Analysis complete! Found **{len(all_changes)}** significant changes.")
+                st.success(f"🎉 Analysis complete! Found **{len(all_changes)}** total changes (OpenCV: {len(opencv_changes)}, YOLO: {len(yolo_changes)})")
+                
                 progress_bar.empty()
                 status_text.empty()
                 
-        except Exception as e:
-            st.error(f"❌ Analysis failed: {str(e)}")
-            progress_bar.empty()
-            status_text.empty()
+            except Exception as e:
+                st.error(f"❌ Analysis failed: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+                progress_bar.empty()
+                status_text.empty()
     
-    # ==================== DISPLAY RESULTS ====================
+    # Display results
     if "earth_results" in st.session_state:
         results = st.session_state.earth_results
         
         st.markdown("---")
-        st.markdown(f"## 📊 Analysis Results: {results['year_old']} → {results['year_new']}")
+        st.markdown("## 📊 Analysis Results")
         
+        # Metrics
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         
         with col_m1:
-            st.metric("📏 Similarity Index", f"{results['ssim_score']:.1%}", delta=f"{(1-results['ssim_score'])*100:.1f}% changed", delta_color="inverse")
+            st.metric("🔍 Total Changes", len(results['all_changes']))
         with col_m2:
-            st.metric("🔍 Changes Detected", len(results['all_changes']))
+            st.metric("🖥️ OpenCV Detections", results['opencv_count'])
         with col_m3:
-            st.metric("📅 Time Span", f"{results['year_new'] - results['year_old']} years")
+            st.metric("🤖 YOLO Detections", results['yolo_count'])
         with col_m4:
-            if results['ssim_score'] > 0.9:
-                st.metric("🟢 Change Level", "Minimal")
-            elif results['ssim_score'] > 0.7:
-                st.metric("🟡 Change Level", "Moderate")
-            else:
-                st.metric("🔴 Change Level", "Significant")
+            st.metric(
+                "📏 Similarity", 
+                f"{results['ssim_score']:.1%}", 
+                delta=f"{(1-results['ssim_score'])*100:.1f}% changed", 
+                delta_color="inverse"
+            )
         
         st.markdown("---")
-        st.markdown("### 🖼️ Visual Comparison")
         
-        tab_individual, tab_sidebyside, tab_annotated = st.tabs(["📷 Individual Images", "↔️ Side-by-Side", "🎯 Changes Highlighted"])
-        
-        with tab_individual:
-            col_img1, col_img2 = st.columns(2)
-            with col_img1:
-                st.markdown(f"**{results['year_old']} (Baseline)**")
-                st.image(results['img_old'], use_container_width=True)
-                buf_old = io.BytesIO()
-                results['img_old'].save(buf_old, format='PNG')
-                st.download_button(f"📥 Download {results['year_old']} Image", buf_old.getvalue(), 
-                                 f"{results['location_name']}_{results['year_old']}.png", "image/png", use_container_width=True)
-            with col_img2:
-                st.markdown(f"**{results['year_new']} (Current)**")
-                st.image(results['img_new'], use_container_width=True)
-                buf_new = io.BytesIO()
-                results['img_new'].save(buf_new, format='PNG')
-                st.download_button(f"📥 Download {results['year_new']} Image", buf_new.getvalue(),
-                                 f"{results['location_name']}_{results['year_new']}.png", "image/png", use_container_width=True)
-        
-        with tab_sidebyside:
-            st.image(results['img_comparison'], use_container_width=True, caption=f"Comparison: {results['year_old']} vs {results['year_new']}")
-            buf_comp = io.BytesIO()
-            results['img_comparison'].save(buf_comp, format='PNG')
-            st.download_button("📥 Download Comparison", buf_comp.getvalue(),
-                             f"{results['location_name']}_comparison.png", "image/png", use_container_width=True)
-        
-        with tab_annotated:
-            st.image(results['img_annotated'], use_container_width=True, caption=f"{results['year_new']} with Changes")
-            st.markdown("**Legend:** 🔴 Red boxes = Detected changes")
-            buf_anno = io.BytesIO()
-            results['img_annotated'].save(buf_anno, format='PNG')
-            st.download_button("📥 Download Annotated", buf_anno.getvalue(),
-                             f"{results['location_name']}_annotated.png", "image/png", use_container_width=True)
-        
-        st.markdown("---")
-        st.markdown("### 📋 Detailed Change Analysis")
-        
-        if len(results['all_changes']) > 0:
-            display_df = results['changes_df'].copy()
-            if 'confidence' in display_df.columns:
-                display_df['confidence'] = (display_df['confidence'] * 100).round(1).astype(str) + '%'
-            st.dataframe(display_df, use_container_width=True, height=400)
-            
-            if 'type' in display_df.columns and len(display_df) > 0:
-                st.markdown("#### 📊 Change Type Distribution")
-                change_counts = display_df['type'].value_counts()
-                col_chart, col_stats = st.columns([2, 1])
-                with col_chart:
-                    st.bar_chart(change_counts)
-                with col_stats:
-                    st.markdown("**Summary:**")
-                    for change_type, count in change_counts.items():
-                        percentage = (count / len(display_df)) * 100
-                        st.markdown(f"- **{change_type}**: {count} ({percentage:.1f}%)")
-            
-            st.markdown("---")
-            st.markdown("### 💾 Download Analysis Data")
-            
-            col_csv, col_excel, col_package = st.columns(3)
-            with col_csv:
-                csv_data = results['changes_df'].to_csv(index=False)
-                st.download_button("📊 Download CSV", csv_data, f"{results['location_name']}_changes.csv", "text/csv", use_container_width=True)
-            with col_excel:
-                excel_buf = io.BytesIO()
-                results['changes_df'].to_excel(excel_buf, index=False, engine='openpyxl')
-                st.download_button("📈 Download Excel", excel_buf.getvalue(), f"{results['location_name']}_changes.xlsx",
-                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            with col_package:
-                st.download_button("📦 Download Complete Package (ZIP)", results['analysis_package'].getvalue(),
-                                 f"{results['location_name']}_analysis.zip", "application/zip", use_container_width=True)
-        else:
-            st.info(f"✅ No significant changes detected between {results['year_old']} and {results['year_new']}")
-    
-    st.markdown("---")
-    with st.expander("💡 Tips for Best Results"):
+        # Confidence legend
         st.markdown("""
-        ### Getting the Best Analysis Results
+        <div style="display: flex; justify-content: center; gap: 25px; margin: 15px 0; padding: 12px 20px; background: rgba(128,128,128,0.1); border-radius: 50px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 20px; height: 20px; background-color: #00ff00; border-radius: 50%;"></div>
+                <span><b>High</b> ≥80%</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 20px; height: 20px; background-color: #ffff00; border-radius: 50%;"></div>
+                <span><b>Medium</b> 50-79%</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 20px; height: 20px; background-color: #ff6600; border-radius: 50%;"></div>
+                <span><b>Low</b> <50%</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        **Zoom Level:**
-        - **14-15**: City-wide analysis
-        - **16-17**: Neighborhood changes  
-        - **18**: Building-level detail
+        # Image comparison
+        st.markdown("### 🖼️ Image Comparison")
         
-        **Year Selection:**
-        - Longer periods (10+ years) show more changes
-        - Recent years (2020-2026) have best quality
+        col_img1, col_img2, col_img3 = st.columns(3)
         
-        **Detection Methods:**
-        - **AI Detection**: Best for buildings
-        - **Image Difference**: Catches all changes
-        - **Combined**: Most comprehensive (recommended)
+        with col_img1:
+            st.markdown("**Earlier Year**")
+            st.image(results['img_old'], use_container_width=True)
         
-        **Common Use Cases:**
-        - 🏗️ Urban development tracking
-        - 🌳 Deforestation monitoring
-        - 🏖️ Coastal erosion analysis
-        """)
+        with col_img2:
+            st.markdown("**Recent Year**")
+            st.image(results['img_new'], use_container_width=True)
+        
+        with col_img3:
+            st.markdown("**🎯 All Detected Changes**")
+            st.image(results['img_annotated'], use_container_width=True)
+        
+        # Download annotated image
+        buf_annotated = io.BytesIO()
+        results['img_annotated'].save(buf_annotated, format='PNG')
+        buf_annotated.seek(0)
+        st.download_button(
+            "📥 Download Annotated Image",
+            buf_annotated,
+            "earth_pro_enhanced_analysis.png",
+            "image/png",
+            use_container_width=True
+        )
+        
+        st.markdown("---")
+        
+        # Detailed changes table
+        if results['all_changes']:
+            st.markdown("### 📋 Detailed Change Analysis")
+            
+            # Create DataFrame
+            changes_data = []
+            for idx, change in enumerate(results['all_changes'], 1):
+                changes_data.append({
+                    "ID": idx,
+                    "Type": change.get('type', 'Change Detected'),
+                    "Confidence": f"{change.get('confidence', 0.5)*100:.1f}%",
+                    "Method": change.get('method', 'N/A'),
+                    "X": int(change['x']),
+                    "Y": int(change['y']),
+                    "Width": int(change['width']),
+                    "Height": int(change['height']),
+                    "Area (px²)": int(change.get('area', change['width'] * change['height']))
+                })
+            
+            df_changes = pd.DataFrame(changes_data)
+            st.dataframe(df_changes, use_container_width=True)
+            
+            # Download options
+            col_dl1, col_dl2 = st.columns(2)
+            
+            with col_dl1:
+                csv_data = df_changes.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Download as CSV",
+                    csv_data,
+                    "earth_pro_enhanced_changes.csv",
+                    "text/csv",
+                    use_container_width=True
+                )
+            
+            with col_dl2:
+                excel_buffer = io.BytesIO()
+                df_changes.to_excel(excel_buffer, index=False, engine='openpyxl')
+                excel_buffer.seek(0)
+                st.download_button(
+                    "📥 Download as Excel",
+                    excel_buffer,
+                    "earth_pro_enhanced_changes.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        else:
+            st.info("No significant changes detected between the two images.")
 
 # ---------- Tab 5: Feedback & Report ----------
 with tab5:
@@ -1438,21 +1460,60 @@ with tab5:
 with tab6:
     st.markdown("""
     ## How to Use This App (Tutorial)
-    **Step 1:** Upload images in Upload & Preview tab  
-    **Step 2:** Adjust settings in Detection & AI Correction  
-    **Step 3:** Try Live Video Detection for real-time analysis  
-    **Step 4:** Use Earth Pro Analysis to compare satellite imagery across years  
-    **Step 5:** Generate PDF reports and provide feedback  
+    
+    **Step 1: Upload & Preview**  
+    Upload your images (JPG, PNG) to begin the analysis.
+    
+    **Step 2: Detection & AI Correction**  
+    Choose your detection mode and let AI find and correct anomalies.
+    
+    **Step 3: Live Video Detection**  
+    Use your webcam for real-time anomaly detection.
+    
+    **Step 4: 🌍 Earth Pro Analysis (ENHANCED!)**  
+    - Open Google Earth Pro and navigate to your area of interest
+    - Use the time slider to select an earlier year
+    - Take a screenshot
+    - Select a recent year and take another screenshot
+    - Upload both images here
+    - **Enhanced detection uses 6 different computer vision methods**
+    - Detects buildings of ALL sizes - from small shops to large complexes
+    - Optionally enable YOLO AI for even better results
+    
+    **Step 5: Generate Reports**  
+    Create PDF reports and provide feedback on your experience.
+    
+    ### 🎯 Tips for Best Results:
+    - Use high-resolution Google Earth Pro screenshots
+    - Ensure both images are from the exact same viewpoint
+    - Lower the "Minimum Building Size" slider to detect smaller buildings
+    - Enable YOLO AI for comprehensive building detection
+    - Experiment with different confidence thresholds
     """)
 
 # ---------- Tab 7: About/Docs ----------
 with tab7:
     st.markdown("""
 <div style="text-align: center; max-width: 800px; margin: 0 auto;">
-<h2 style="font-weight: 700; color: #00A3FF;">About SmartDetect</h2>
+<h2 style="font-weight: 700; color: #00A3FF;">About SmartDetect - ENHANCED</h2>
 <p style="font-size: 1.1rem; line-height: 1.6; color: #CCC;">
-SmartDetect is a cutting-edge AI solution for quality control and infrastructure maintenance.
+SmartDetect is a cutting-edge AI solution for quality control, infrastructure maintenance, and urban development monitoring.
 </p>
+
+<div style="background: rgba(0, 163, 255, 0.1); padding: 20px; border-radius: 12px; margin: 20px 0;">
+<h3 style="color: #00A3FF;">🚀 NEW: Enhanced Earth Pro Analysis</h3>
+<p style="color: #FFF;">
+<strong>6 Detection Methods:</strong><br>
+1. Multi-Scale Intensity Analysis<br>
+2. Edge Structure Detection<br>
+3. RGB Color Change Detection<br>
+4. Gradient/Texture Analysis<br>
+5. Adaptive Thresholding<br>
+6. Laplacian Detail Detection<br>
+<br>
+Plus optional YOLO deep learning for building detection!
+</p>
+</div>
 
 <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin: 30px 0;">
 <div style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; width: 200px;">
@@ -1467,8 +1528,8 @@ SmartDetect is a cutting-edge AI solution for quality control and infrastructure
 </div>
 <div style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; width: 200px;">
 <div style="font-size: 2rem;">🌍</div>
-<h4 style="color: white;">Earth Pro</h4>
-<p style="font-size: 0.9rem; color: #AAA;">Satellite change detection</p>
+<h4 style="color: white;">Earth Pro ENHANCED</h4>
+<p style="font-size: 0.9rem; color: #AAA;">6-method satellite analysis</p>
 </div>
 </div>
 
@@ -1481,4 +1542,4 @@ Sk Shonju Ali • Trishan Nayek
 </div>
 """, unsafe_allow_html=True)
     
-    st.markdown("<div style='text-align: center; margin-top: 20px; font-size: 0.8rem; color: #666;'>SmartDetect v1.0 with Earth Pro Analysis</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; margin-top: 20px; font-size: 0.8rem; color: #666;'>SmartDetect v2.0 - Enhanced Earth Pro Analysis with 6-Method Detection</div>", unsafe_allow_html=True)
