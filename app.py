@@ -8,9 +8,7 @@ import zipfile
 import tempfile
 from datetime import datetime
 from fpdf import FPDF
-from ultralytics import YOLO
 import os
-import cv2
 import numpy as np
 import base64
 import math
@@ -716,7 +714,9 @@ with tab2:
                         else:
                             @st.cache_resource
                             def load_model():
-                                return YOLO('yolov8n.pt')
+                                from ultralytics import YOLO
+                                return YOLO("yolov8n.pt")
+
                             
                             model = load_model()
                             results = model(orig_img)
@@ -982,7 +982,8 @@ with tab3:
                         else:
                             @st.cache_resource
                             def load_model():
-                                return YOLO('yolov8n.pt')
+                                from ultralytics import YOLO
+                                return YOLO("yolov8n.pt")
                             
                             model = load_model()
                             results = model(img)
@@ -1164,8 +1165,9 @@ with tab4:
                     status_text.text("🤖 Running deep learning (YOLO) analysis...")
                     
                     @st.cache_resource
-                    def load_yolo_model():
-                        return YOLO('yolov8n.pt')
+                    def load_model():
+                        from ultralytics import YOLO
+                        return YOLO("yolov8n.pt")
                     
                     model = load_yolo_model()
                     yolo_changes = detect_changes_yolo(img_old, img_new, model, min_confidence=yolo_confidence / 100)
@@ -1543,3 +1545,4 @@ Sk Shonju Ali • Trishan Nayek
 """, unsafe_allow_html=True)
     
     st.markdown("<div style='text-align: center; margin-top: 20px; font-size: 0.8rem; color: #666;'>SmartDetect v2.0 - Enhanced Earth Pro Analysis with 6-Method Detection</div>", unsafe_allow_html=True)
+
