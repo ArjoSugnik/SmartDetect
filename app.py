@@ -75,8 +75,23 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 
 /* ── Hide Streamlit chrome ── */
-#MainMenu, footer, header { visibility: hidden; }
+#MainMenu, footer { visibility: hidden; }
+header { background: transparent !important; }
 [data-testid="stToolbar"] { display: none; }
+
+/* Ensure sidebar toggle button is always visible and looks premium */
+[data-testid="collapsedControl"] {
+    visibility: visible !important;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    color: var(--accent) !important;
+    transition: all 0.2s ease-in-out;
+}
+[data-testid="collapsedControl"]:hover {
+    background: rgba(0, 229, 255, 0.1) !important;
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.2) !important;
+}
 
 /* ── Animated hero banner ── */
 .hero-banner {
