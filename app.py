@@ -12,17 +12,17 @@ import numpy as np
 
 # ── Page config (must be first Streamlit call) ────────────────────────────────
 st.set_page_config(
-    page_title="SmartDetect · Detection System",
+    page_title="SmartDetect · AI Detection System",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ── Local imports ─────────────────────────────────────────────────────────────
 from anomaly import detect_image_anomaly, compute_risk_score, STRUCTURAL_ANOMALY_TYPES
 from video_processing import (
-    process_video_frames, 
-    process_camera_frame, 
+    process_video_frames,
+    process_camera_frame,
     get_live_webcam_frame,
     create_background_subtractor,
 )
@@ -40,129 +40,296 @@ from utils import (
     generate_ai_heatmap,
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
+# ── Custom CSS — Modern Glassmorphism + Animations ────────────────────────────
 st.markdown(
     """
 <style>
 /* ── Google Fonts ── */
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;600;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* ── Root variables ── */
 :root {
-    --bg-primary:   #060b14;
-    --bg-card:      #0d1625;
-    --bg-card2:     #111d2e;
+    --bg-primary:   #04080f;
+    --bg-card:      rgba(13, 22, 37, 0.65);
+    --bg-card-solid: #0d1625;
+    --bg-card2:     rgba(17, 29, 46, 0.55);
+    --bg-navbar:    rgba(8, 14, 26, 0.72);
     --accent:       #00e5ff;
     --accent2:      #7b2fff;
+    --accent3:      #00b8d4;
     --success:      #00e676;
     --warning:      #ffab00;
     --danger:       #ff1744;
     --text-primary: #e8f4fd;
     --text-muted:   #6b8cad;
-    --border:       rgba(0,229,255,0.15);
+    --border:       rgba(0,229,255,0.12);
+    --glass-blur:   16px;
+    --glass-border: rgba(255,255,255,0.06);
+}
+
+/* ── Keyframe Animations ── */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+@keyframes slideInDown {
+    from { opacity: 0; transform: translateY(-16px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 8px rgba(0,229,255,0.15); }
+    50%      { box-shadow: 0 0 20px rgba(0,229,255,0.3); }
+}
+@keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+@keyframes gradientShift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+@keyframes borderPulse {
+    0%, 100% { border-color: rgba(0,229,255,0.12); }
+    50%      { border-color: rgba(0,229,255,0.28); }
 }
 
 /* ── Global reset ── */
 html, body, [data-testid="stAppViewContainer"] {
     background: var(--bg-primary) !important;
-    font-family: 'Outfit', sans-serif;
+    font-family: 'Inter', 'Outfit', sans-serif;
     color: var(--text-primary);
 }
 
-[data-testid="stSidebar"] {
-    background: var(--bg-card) !important;
-    border-right: 1px solid var(--border);
+/* ── Completely hide sidebar ── */
+[data-testid="stSidebar"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"],
+section[data-testid="stSidebar"] {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    visibility: hidden !important;
 }
 
 /* ── Hide Streamlit chrome ── */
 #MainMenu, footer { visibility: hidden; }
-header { background: transparent !important; }
+header[data-testid="stHeader"] { background: transparent !important; height: 0 !important; }
 [data-testid="stToolbar"] { display: none; }
+.block-container { padding-top: 1rem !important; }
 
-/* Ensure sidebar toggle button is always visible and looks premium */
-[data-testid="collapsedControl"] {
-    visibility: visible !important;
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-    color: var(--accent) !important;
-    transition: all 0.2s ease-in-out;
+/* ── Top Navbar Container ── */
+.top-navbar {
+    background: var(--bg-navbar);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 0.6rem 1.2rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    animation: slideInDown 0.5s ease-out;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.4);
 }
-[data-testid="collapsedControl"]:hover {
-    background: rgba(0, 229, 255, 0.1) !important;
-    box-shadow: 0 0 10px rgba(0, 229, 255, 0.2) !important;
+.navbar-brand {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(0,229,255,0.5);
+    white-space: nowrap;
+    letter-spacing: -0.5px;
+    margin-right: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.navbar-brand .brand-dot {
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulseGlow 2s ease-in-out infinite;
+}
+.navbar-divider {
+    width: 1px;
+    height: 28px;
+    background: rgba(0,229,255,0.15);
+    flex-shrink: 0;
+}
+
+/* ── Override Streamlit radio buttons to look like nav tabs ── */
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div > div[data-testid="stRadio"] > div {
+    gap: 0 !important;
+}
+div[data-testid="stRadio"] > label { display: none !important; }
+div[data-testid="stRadio"] > div[role="radiogroup"] {
+    display: flex !important;
+    gap: 4px !important;
+    flex-wrap: wrap !important;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"] label {
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: 10px !important;
+    padding: 6px 14px !important;
+    font-family: 'Space Mono', monospace !important;
+    font-size: 0.7rem !important;
+    letter-spacing: 0.5px !important;
+    color: var(--text-muted) !important;
+    cursor: pointer !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    white-space: nowrap !important;
+    margin: 0 !important;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"] label:hover {
+    background: rgba(0,229,255,0.06) !important;
+    border-color: rgba(0,229,255,0.15) !important;
+    color: var(--accent) !important;
+    transform: translateY(-1px) !important;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"],
+div[data-testid="stRadio"] > div[role="radiogroup"] label:has(input:checked) {
+    background: rgba(0,229,255,0.1) !important;
+    border-color: rgba(0,229,255,0.3) !important;
+    color: var(--accent) !important;
+    box-shadow: 0 0 12px rgba(0,229,255,0.15) !important;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"] label span[data-testid="stMarkdownContainer"] p {
+    font-family: 'Space Mono', monospace !important;
+    font-size: 0.7rem !important;
+}
+/* Hide radio button circle indicators */
+div[data-testid="stRadio"] > div[role="radiogroup"] label > div:first-child {
+    display: none !important;
 }
 
 /* ── Animated hero banner ── */
 .hero-banner {
-    background: linear-gradient(135deg, #060b14 0%, #0a1628 40%, #060f20 100%);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 2.5rem 2rem;
+    background: linear-gradient(135deg,
+        rgba(6,11,20,0.9) 0%,
+        rgba(10,22,40,0.8) 40%,
+        rgba(6,15,32,0.9) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 2.5rem 2.2rem;
     margin-bottom: 1.5rem;
     position: relative;
     overflow: hidden;
+    animation: fadeInUp 0.6s ease-out;
 }
 .hero-banner::before {
     content: '';
     position: absolute; inset: 0;
     background: repeating-linear-gradient(
         0deg, transparent, transparent 40px,
-        rgba(0,229,255,0.02) 40px, rgba(0,229,255,0.02) 41px
+        rgba(0,229,255,0.015) 40px, rgba(0,229,255,0.015) 41px
     ),
     repeating-linear-gradient(
         90deg, transparent, transparent 40px,
-        rgba(0,229,255,0.02) 40px, rgba(0,229,255,0.02) 41px
+        rgba(0,229,255,0.015) 40px, rgba(0,229,255,0.015) 41px
     );
+    pointer-events: none;
+}
+.hero-banner::after {
+    content: '';
+    position: absolute;
+    top: -50%; right: -50%;
+    width: 100%; height: 100%;
+    background: radial-gradient(circle, rgba(0,229,255,0.04) 0%, transparent 60%);
     pointer-events: none;
 }
 .hero-title {
     font-family: 'Space Mono', monospace;
-    font-size: 2.1rem;
+    font-size: 2rem;
     font-weight: 700;
     color: var(--accent);
     letter-spacing: -0.5px;
     margin: 0;
-    text-shadow: 0 0 30px rgba(0,229,255,0.4);
+    text-shadow: 0 0 30px rgba(0,229,255,0.35);
 }
 .hero-sub {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     color: var(--text-muted);
     margin-top: 0.4rem;
     font-weight: 300;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+    line-height: 1.5;
 }
 .hero-badge {
     display: inline-block;
-    background: rgba(0,229,255,0.1);
-    border: 1px solid rgba(0,229,255,0.3);
+    background: rgba(0,229,255,0.08);
+    border: 1px solid rgba(0,229,255,0.25);
     color: var(--accent);
-    padding: 2px 10px;
+    padding: 3px 12px;
     border-radius: 20px;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-family: 'Space Mono', monospace;
     margin-right: 6px;
     letter-spacing: 1px;
+    transition: all 0.3s ease;
+}
+.hero-badge:hover {
+    background: rgba(0,229,255,0.15);
+    box-shadow: 0 0 12px rgba(0,229,255,0.2);
+    transform: translateY(-1px);
 }
 
-/* ── Metric cards ── */
-.metric-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+/* ── Page title (used on sub-pages) ── */
+.page-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+    margin-bottom: 1.5rem;
+    text-shadow: 0 0 20px rgba(0,229,255,0.3);
+    animation: fadeInUp 0.5s ease-out;
+}
+
+/* ── Metric cards — Glassmorphism ── */
+.metric-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    animation: fadeInUp 0.6s ease-out 0.1s both;
+}
 .metric-card {
-    flex: 1; min-width: 140px;
+    flex: 1;
+    min-width: 140px;
     background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.1rem 1.2rem;
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 1.2rem 1.3rem;
     position: relative;
     overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.metric-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(0,229,255,0.2);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 16px rgba(0,229,255,0.08);
 }
 .metric-card::after {
     content: '';
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, var(--accent), var(--accent2));
+    opacity: 0.8;
 }
 .metric-label {
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 1.5px;
@@ -177,17 +344,25 @@ header { background: transparent !important; }
     margin-top: 4px;
 }
 
-/* ── Section card ── */
+/* ── Section card — Glassmorphism ── */
 .section-card {
     background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
     padding: 1.5rem;
     margin-bottom: 1.2rem;
+    animation: fadeInUp 0.5s ease-out both;
+    transition: all 0.3s ease;
+}
+.section-card:hover {
+    border-color: rgba(0,229,255,0.15);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.2);
 }
 .section-title {
     font-family: 'Space Mono', monospace;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     color: var(--accent);
     text-transform: uppercase;
     letter-spacing: 2px;
@@ -197,10 +372,38 @@ header { background: transparent !important; }
     gap: 8px;
 }
 
+/* ── System status bar (dashboard) ── */
+.status-bar {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 0.8rem 1.2rem;
+    background: var(--bg-card);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    animation: fadeIn 0.6s ease-out 0.2s both;
+}
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: 'Space Mono', monospace;
+}
+.status-value {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
 /* ── Risk badge ── */
-.risk-low    { color: var(--success); background: rgba(0,230,118,0.1);  border: 1px solid rgba(0,230,118,0.3);  }
-.risk-medium { color: var(--warning); background: rgba(255,171,0,0.1);  border: 1px solid rgba(255,171,0,0.3);  }
-.risk-high   { color: var(--danger);  background: rgba(255,23,68,0.1);   border: 1px solid rgba(255,23,68,0.3);  }
+.risk-low    { color: var(--success); background: rgba(0,230,118,0.08);  border: 1px solid rgba(0,230,118,0.25);  }
+.risk-medium { color: var(--warning); background: rgba(255,171,0,0.08);  border: 1px solid rgba(255,171,0,0.25);  }
+.risk-high   { color: var(--danger);  background: rgba(255,23,68,0.08);   border: 1px solid rgba(255,23,68,0.25);  }
 .risk-badge {
     display: inline-block;
     padding: 4px 16px;
@@ -209,11 +412,15 @@ header { background: transparent !important; }
     font-size: 0.8rem;
     font-weight: 700;
     letter-spacing: 1px;
+    transition: all 0.3s ease;
+}
+.risk-badge:hover {
+    transform: scale(1.05);
 }
 
 /* ── Progress bar ── */
 .score-bar-wrap {
-    background: rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.04);
     border-radius: 6px;
     height: 8px;
     margin: 8px 0;
@@ -222,117 +429,216 @@ header { background: transparent !important; }
 .score-bar-fill {
     height: 100%;
     border-radius: 6px;
-    transition: width 0.6s ease;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ── Chat bubbles ── */
 .chat-user {
-    background: rgba(123,47,255,0.15);
-    border: 1px solid rgba(123,47,255,0.3);
-    border-radius: 12px 12px 2px 12px;
-    padding: 0.7rem 1rem;
-    margin: 0.4rem 0;
+    background: rgba(123,47,255,0.1);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(123,47,255,0.2);
+    border-radius: 14px 14px 4px 14px;
+    padding: 0.8rem 1.1rem;
+    margin: 0.5rem 0;
     text-align: right;
     font-size: 0.9rem;
+    animation: fadeInUp 0.3s ease-out;
 }
 .chat-ai {
     background: var(--bg-card2);
-    border: 1px solid var(--border);
-    border-radius: 12px 12px 12px 2px;
-    padding: 0.7rem 1rem;
-    margin: 0.4rem 0;
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px 14px 14px 4px;
+    padding: 0.8rem 1.1rem;
+    margin: 0.5rem 0;
     font-size: 0.9rem;
     color: var(--text-primary);
+    animation: fadeInUp 0.3s ease-out;
 }
 .chat-label {
     font-size: 0.68rem;
     font-family: 'Space Mono', monospace;
     text-transform: uppercase;
     letter-spacing: 1px;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
 }
+
+/* ── Feature card (dashboard) ── */
+.feature-item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(0,229,255,0.04);
+    transition: all 0.2s ease;
+}
+.feature-item:hover {
+    padding-left: 8px;
+    background: rgba(0,229,255,0.02);
+    border-radius: 8px;
+}
+.feature-item:last-child { border-bottom: none; }
 
 /* ── Streamlit overrides ── */
 .stButton > button {
-    background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(123,47,255,0.1)) !important;
-    border: 1px solid var(--accent) !important;
+    background: rgba(0,229,255,0.06) !important;
+    backdrop-filter: blur(8px) !important;
+    border: 1px solid rgba(0,229,255,0.2) !important;
     color: var(--accent) !important;
     font-family: 'Space Mono', monospace !important;
-    font-size: 0.8rem !important;
-    letter-spacing: 1px !important;
-    border-radius: 8px !important;
-    transition: all 0.2s !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 0.5px !important;
+    border-radius: 10px !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    padding: 0.5rem 1.2rem !important;
 }
 .stButton > button:hover {
-    background: rgba(0,229,255,0.2) !important;
-    box-shadow: 0 0 20px rgba(0,229,255,0.2) !important;
-    transform: translateY(-1px) !important;
+    background: rgba(0,229,255,0.14) !important;
+    box-shadow: 0 0 24px rgba(0,229,255,0.15), 0 4px 16px rgba(0,0,0,0.2) !important;
+    transform: translateY(-2px) !important;
+    border-color: rgba(0,229,255,0.4) !important;
+}
+.stButton > button:active {
+    transform: translateY(0) !important;
 }
 .stTabs [data-baseweb="tab-list"] {
     background: var(--bg-card) !important;
-    border-radius: 10px !important;
+    backdrop-filter: blur(12px) !important;
+    border-radius: 12px !important;
     padding: 4px !important;
     gap: 2px !important;
-    border: 1px solid var(--border) !important;
+    border: 1px solid var(--glass-border) !important;
 }
 .stTabs [data-baseweb="tab"] {
     font-family: 'Space Mono', monospace !important;
-    font-size: 0.75rem !important;
+    font-size: 0.72rem !important;
     letter-spacing: 1px !important;
     color: var(--text-muted) !important;
-    border-radius: 7px !important;
+    border-radius: 8px !important;
+    transition: all 0.25s ease !important;
 }
 .stTabs [aria-selected="true"] {
-    background: rgba(0,229,255,0.12) !important;
+    background: rgba(0,229,255,0.1) !important;
     color: var(--accent) !important;
 }
 [data-testid="stFileUploader"] {
     background: var(--bg-card2) !important;
-    border: 1px dashed var(--border) !important;
-    border-radius: 10px !important;
+    backdrop-filter: blur(8px) !important;
+    border: 1px dashed rgba(0,229,255,0.15) !important;
+    border-radius: 12px !important;
+    transition: all 0.3s ease !important;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: rgba(0,229,255,0.3) !important;
+    box-shadow: 0 0 16px rgba(0,229,255,0.05) !important;
 }
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea {
-    background: var(--bg-card2) !important;
-    border: 1px solid var(--border) !important;
+    background: rgba(17,29,46,0.6) !important;
+    backdrop-filter: blur(8px) !important;
+    border: 1px solid var(--glass-border) !important;
     color: var(--text-primary) !important;
-    font-family: 'Outfit', sans-serif !important;
-    border-radius: 8px !important;
+    font-family: 'Inter', 'Outfit', sans-serif !important;
+    border-radius: 10px !important;
+    transition: all 0.3s ease !important;
 }
-.stDataFrame { border: 1px solid var(--border) !important; border-radius: 10px !important; }
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: rgba(0,229,255,0.3) !important;
+    box-shadow: 0 0 12px rgba(0,229,255,0.1) !important;
+}
+.stDataFrame {
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
 div[data-testid="stExpander"] {
     background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 10px !important;
+    backdrop-filter: blur(12px) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 12px !important;
+    transition: all 0.3s ease !important;
+}
+div[data-testid="stExpander"]:hover {
+    border-color: rgba(0,229,255,0.15) !important;
 }
 .stAlert {
+    border-radius: 12px !important;
+    font-family: 'Inter', 'Outfit', sans-serif !important;
+    backdrop-filter: blur(8px) !important;
+}
+.stSelectbox > div > div {
+    background: rgba(17,29,46,0.6) !important;
+    border: 1px solid var(--glass-border) !important;
     border-radius: 10px !important;
-    font-family: 'Outfit', sans-serif !important;
 }
-
-/* ── Sidebar nav pills ── */
-.nav-pill {
-    display: block;
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-family: 'Space Mono', monospace;
-    font-size: 0.75rem;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-    text-decoration: none;
-    margin-bottom: 4px;
-    border: 1px solid transparent;
-}
-.nav-pill.active {
-    background: rgba(0,229,255,0.1);
-    border-color: rgba(0,229,255,0.25);
-    color: var(--accent);
+.stSlider > div > div > div {
+    background: rgba(0,229,255,0.2) !important;
 }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
-::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.25); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,229,255,0.35); }
+
+/* ── Animated gradient accent line ── */
+.accent-line {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 3s linear infinite;
+    border-radius: 2px;
+    margin: 0.5rem 0 1.5rem;
+    opacity: 0.5;
+}
+
+/* ── Step item (quick start) ── */
+.step-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 14px;
+    transition: all 0.2s ease;
+}
+.step-item:hover {
+    transform: translateX(4px);
+}
+.step-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--accent);
+    background: rgba(0,229,255,0.06);
+    border: 1px solid rgba(0,229,255,0.18);
+    border-radius: 6px;
+    padding: 2px 8px;
+    white-space: nowrap;
+    min-width: 34px;
+    text-align: center;
+}
+.step-text {
+    font-size: 0.85rem;
+    color: #a8c4e0;
+    padding-top: 1px;
+    line-height: 1.4;
+}
+
+/* ── Stagger fade-in for child elements ── */
+.stagger-1 { animation: fadeInUp 0.5s ease-out 0.05s both; }
+.stagger-2 { animation: fadeInUp 0.5s ease-out 0.1s both; }
+.stagger-3 { animation: fadeInUp 0.5s ease-out 0.15s both; }
+.stagger-4 { animation: fadeInUp 0.5s ease-out 0.2s both; }
+.stagger-5 { animation: fadeInUp 0.5s ease-out 0.25s both; }
+
+/* ── Empty state ── */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #3a5270;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.85rem;
+    animation: fadeIn 0.6s ease-out;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -360,82 +666,41 @@ def invalidate_history_cache():
     if "_history_cache" in st.session_state:
         del st.session_state["_history_cache"]
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-# SIDEBAR
+# TOP NAVIGATION BAR
 # ─────────────────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown(
-        """
-    <div style='text-align:center; padding: 1rem 0 1.5rem;'>
-        <div style='font-family: Space Mono, monospace; font-size:1.3rem;
-                    color: #00e5ff; font-weight:700; letter-spacing:-0.5px;
-                    text-shadow: 0 0 20px rgba(0,229,255,0.5)'>⬡ SmartDetect</div>
-        <div style='font-size:0.7rem; color:#6b8cad; letter-spacing:2px;
-                    text-transform:uppercase; margin-top:4px'>Detection System v2.0</div>
+# Build a custom HTML header with brand, then use st.radio horizontal for nav
+st.markdown(
+    """
+<div class='top-navbar'>
+    <div class='navbar-brand'>
+        <div class='brand-dot'></div>
+        SmartDetect
     </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    <div class='navbar-divider'></div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
-    st.divider()
+page = st.radio(
+    "Navigation",
+    [
+        "🏠 Dashboard",
+        "🖼️ Image",
+        "📷 Camera",
+        "🎬 Video",
+        "🌍 Geo Change",
+        "🤖 AI Chat",
+        "📋 History",
+        "ℹ️ About",
+    ],
+    horizontal=True,
+    label_visibility="collapsed",
+)
 
-    page = st.radio(
-        "Navigation",
-        [
-            "🏠  Dashboard",
-            "🖼️  Image Detection",
-            "📷  Camera Detection",
-            "🎬  Video Analysis",
-            "🌍  Geo Change",
-            "🤖  AI Chat",
-            "📋  History",
-            "ℹ️  About Project",
-        ],
-        label_visibility="collapsed",
-    )
-
-    st.divider()
-
-    # Live system stats
-    history_data = cached_load_history()
-    total = len(history_data)
-    highrisk = sum(1 for h in history_data if h.get("risk_level") == "HIGH")
-    
-    gemini_health = check_gemini_status()
-    if gemini_health["online"]:
-        gemini_status_html = "<span style='color:#00e676; font-family:Space Mono,monospace'>● ONLINE</span>"
-    else:
-        gemini_status_html = "<span style='color:#ff1744; font-family:Space Mono,monospace'>● OFFLINE</span>"
-
-    st.markdown(
-        f"""
-    <div style='font-family: Space Mono, monospace; font-size:0.7rem;
-                color:#6b8cad; text-transform:uppercase; letter-spacing:1.5px;
-                margin-bottom:0.8rem'>System Status</div>
-    <div style='display:flex; flex-direction:column; gap:6px'>
-        <div style='display:flex; justify-content:space-between; font-size:0.8rem'>
-            <span style='color:#6b8cad'>Total Scans</span>
-            <span style='color:#00e5ff; font-family:Space Mono,monospace'>{total}</span>
-        </div>
-        <div style='display:flex; justify-content:space-between; font-size:0.8rem'>
-            <span style='color:#6b8cad'>High Risk</span>
-            <span style='color:#ff1744; font-family:Space Mono,monospace'>{highrisk}</span>
-        </div>
-        <div style='display:flex; justify-content:space-between; font-size:0.8rem'>
-            <span style='color:#6b8cad'>Gemini</span>
-            {gemini_status_html}
-        </div>
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-    st.divider()
-    st.markdown(
-        "<div style='font-size:0.68rem; color:#3a5270; text-align:center;"
-        "font-family:Space Mono,monospace'>Built with Python · Streamlit<br/>OpenCV · Gemini LLM</div>",
-        unsafe_allow_html=True,
-    )
+st.markdown("<div class='accent-line'></div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -479,14 +744,14 @@ def render_risk_widget(score: int, risk_level: str):
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: DASHBOARD
 # ─────────────────────────────────────────────────────────────────────────────
-if page == "🏠  Dashboard":
+if page == "🏠 Dashboard":
     st.markdown(
         """
     <div class='hero-banner'>
         <div>
             <span class='hero-badge'>AI-POWERED</span>
             <span class='hero-badge'>REAL-TIME</span>
-            <span class='hero-badge'>LOCAL LLM</span>
+            <span class='hero-badge'>GEMINI VISION</span>
         </div>
         <div class='hero-title' style='margin-top:0.8rem'>
             Anomaly Detection System
@@ -499,12 +764,55 @@ if page == "🏠  Dashboard":
         unsafe_allow_html=True,
     )
 
+    # System status bar (moved from sidebar)
     history_data = cached_load_history()
     total = len(history_data)
     highrisk = sum(1 for h in history_data if h.get("risk_level") == "HIGH")
     mediumrisk = sum(1 for h in history_data if h.get("risk_level") == "MEDIUM")
     lowrisk = sum(1 for h in history_data if h.get("risk_level") == "LOW")
 
+    gemini_health = check_gemini_status()
+    if gemini_health["online"]:
+        gemini_dot = "<span style='color:#00e676'>●</span>"
+        gemini_text = "<span class='status-value' style='color:#00e676'>ONLINE</span>"
+    else:
+        gemini_dot = "<span style='color:#ff1744'>●</span>"
+        gemini_text = "<span class='status-value' style='color:#ff1744'>OFFLINE</span>"
+
+    st.markdown(
+        f"""
+    <div class='status-bar'>
+        <div class='status-item'>
+            <span>📊</span>
+            <span>Scans:</span>
+            <span class='status-value' style='color:var(--accent)'>{total}</span>
+        </div>
+        <div class='status-item'>
+            <span>🔴</span>
+            <span>High Risk:</span>
+            <span class='status-value' style='color:#ff1744'>{highrisk}</span>
+        </div>
+        <div class='status-item'>
+            <span>🟡</span>
+            <span>Medium:</span>
+            <span class='status-value' style='color:#ffab00'>{mediumrisk}</span>
+        </div>
+        <div class='status-item'>
+            <span>🟢</span>
+            <span>Low:</span>
+            <span class='status-value' style='color:#00e676'>{lowrisk}</span>
+        </div>
+        <div class='status-item'>
+            {gemini_dot}
+            <span>Gemini:</span>
+            {gemini_text}
+        </div>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    # Metric cards
     st.markdown(
         f"""
     <div class='metric-row'>
@@ -551,8 +859,7 @@ if page == "🏠  Dashboard":
         for icon, title, desc in features:
             st.markdown(
                 f"""
-            <div style='display:flex; gap:12px; align-items:flex-start;
-                        padding:10px 0; border-bottom:1px solid rgba(0,229,255,0.06)'>
+            <div class='feature-item'>
                 <div style='font-size:1.3rem; min-width:30px'>{icon}</div>
                 <div>
                     <div style='font-weight:600; font-size:0.9rem'>{title}</div>
@@ -573,7 +880,7 @@ if page == "🏠  Dashboard":
             unsafe_allow_html=True,
         )
         steps = [
-            ("01", "Navigate to any module via the sidebar"),
+            ("01", "Select any module from the top navigation bar"),
             ("02", "Upload image/video or start camera"),
             ("03", "View detection results & risk score"),
             ("04", "Get AI explanation from Gemini"),
@@ -582,13 +889,9 @@ if page == "🏠  Dashboard":
         for num, text in steps:
             st.markdown(
                 f"""
-            <div style='display:flex; gap:12px; align-items:flex-start; margin-bottom:12px'>
-                <div style='font-family:Space Mono,monospace; font-size:0.7rem;
-                            color:#00e5ff; background:rgba(0,229,255,0.08);
-                            border:1px solid rgba(0,229,255,0.2); border-radius:6px;
-                            padding:2px 8px; white-space:nowrap; min-width:34px;
-                            text-align:center'>{num}</div>
-                <div style='font-size:0.85rem; color:#a8c4e0; padding-top:1px'>{text}</div>
+            <div class='step-item'>
+                <div class='step-num'>{num}</div>
+                <div class='step-text'>{text}</div>
             </div>
             """,
                 unsafe_allow_html=True,
@@ -596,10 +899,11 @@ if page == "🏠  Dashboard":
 
         st.markdown(
             """
-        <div style='margin-top:1rem; padding:12px; background:rgba(123,47,255,0.08);
-                    border:1px solid rgba(123,47,255,0.2); border-radius:8px'>
+        <div style='margin-top:1rem; padding:12px; background:rgba(123,47,255,0.06);
+                    backdrop-filter:blur(8px); border:1px solid rgba(123,47,255,0.18);
+                    border-radius:10px'>
             <div style='font-size:0.72rem; font-family:Space Mono,monospace;
-                        color:#7b2fff; letter-spacing:1px; margin-bottom:6px'>OLLAMA SETUP</div>
+                        color:#7b2fff; letter-spacing:1px; margin-bottom:6px'>GEMINI SETUP</div>
             <code style='font-size:0.72rem; color:#a8c4e0; display:block; line-height:1.8'>
             $ gemini pull mistral<br/>
             $ gemini serve
@@ -626,7 +930,7 @@ if page == "🏠  Dashboard":
                 st.markdown(
                     f"""
                 <div style='display:flex; justify-content:space-between; align-items:center;
-                            padding:7px 0; border-bottom:1px solid rgba(0,229,255,0.06);
+                            padding:7px 0; border-bottom:1px solid rgba(0,229,255,0.04);
                             font-size:0.8rem'>
                     <span style='color:#a8c4e0'>{entry.get("source","Unknown")[:22]}</span>
                     <span style='color:{color}; font-family:Space Mono,monospace;
@@ -641,9 +945,9 @@ if page == "🏠  Dashboard":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: IMAGE DETECTION
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "🖼️  Image Detection":
+elif page == "🖼️ Image":
     st.markdown(
-        "<div class='hero-title' style='margin-bottom:1.5rem'>🖼️ Image Anomaly Detection</div>",
+        "<div class='page-title'>🖼️ Image Anomaly Detection</div>",
         unsafe_allow_html=True,
     )
 
@@ -825,7 +1129,7 @@ elif page == "🖼️  Image Detection":
         with st.expander("🤖 Generate AI Explanation (Gemini)", expanded=False):
             if st.button("✨ Get AI Explanation", key="img_explain"):
                 with st.spinner("Connecting to Gemini..."):
-                    explanation = generate_explanation(result, score, risk_level)
+                    explanation = generate_explanation(result, score, risk_level, cv_img)
                 st.markdown(
                     f"""
                 <div class='chat-ai'>
@@ -865,9 +1169,9 @@ elif page == "🖼️  Image Detection":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: CAMERA DETECTION
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "📷  Camera Detection":
+elif page == "📷 Camera":
     st.markdown(
-        "<div class='hero-title' style='margin-bottom:1.5rem'>📷 Real-Time Camera Detection</div>",
+        "<div class='page-title'>📷 Real-Time Camera Detection</div>",
         unsafe_allow_html=True,
     )
 
@@ -875,7 +1179,7 @@ elif page == "📷  Camera Detection":
         """
     <div class='section-card'>
         <div class='section-title'>ℹ️ How It Works</div>
-        <p style='font-size:0.85rem; color:#a8c4e0; margin:0'>
+        <p style='font-size:0.85rem; color:#a8c4e0; margin:0; line-height:1.6'>
         Capture a photo using your device camera. Each frame is processed through
         the anomaly detection pipeline — contour analysis, thresholding, and risk scoring.
         Results are displayed instantly alongside AI explanation support.
@@ -1017,6 +1321,21 @@ elif page == "📷  Camera Detection":
                     unsafe_allow_html=True,
                 )
 
+        # AI Explanation
+        with st.expander("🤖 Generate AI Explanation (Gemini)", expanded=False):
+            if st.button("✨ Get AI Explanation", key="cam_explain"):
+                with st.spinner("Connecting to Gemini..."):
+                    explanation = generate_explanation(result, score, risk_level, cv_img)
+                st.markdown(
+                    f"""
+                <div class='chat-ai'>
+                    <div class='chat-label' style='color:#00e5ff'>SmartDetect · Gemini</div>
+                    {explanation}
+                </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+
         if st.button("💾 Save Frame to History"):
             save_history_entry(
                 source="Camera Capture",
@@ -1032,9 +1351,9 @@ elif page == "📷  Camera Detection":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: VIDEO ANALYSIS
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "🎬  Video Analysis":
+elif page == "🎬 Video":
     st.markdown(
-        "<div class='hero-title' style='margin-bottom:1.5rem'>🎬 Video Anomaly Analysis</div>",
+        "<div class='page-title'>🎬 Video Anomaly Analysis</div>",
         unsafe_allow_html=True,
     )
 
@@ -1141,6 +1460,28 @@ elif page == "🎬  Video Analysis":
                     ).set_index("Frame")
                     st.line_chart(chart_data, color="#00e5ff")
 
+                    # AI Explanation for Video
+                    with st.expander("🤖 Generate AI Summary (Gemini)", expanded=False):
+                        if st.button("✨ Get AI Explanation", key="vid_explain"):
+                            with st.spinner("Connecting to Gemini..."):
+                                mock_result = {
+                                    "anomaly_type": "Video Analysis Peak",
+                                    "contour_count": "Multiple frames",
+                                    "anomaly_area_pct": max_score,
+                                    "edge_density": 0.0,
+                                    "brightness_std": 0.0,
+                                }
+                                explanation = generate_explanation(mock_result, int(max_score), overall_risk)
+                            st.markdown(
+                                f"""
+                            <div class='chat-ai'>
+                                <div class='chat-label' style='color:#00e5ff'>SmartDetect · Gemini</div>
+                                {explanation}
+                            </div>
+                            """,
+                                unsafe_allow_html=True,
+                            )
+
                     save_history_entry(
                         source=video_file.name,
                         anomaly_type="Video Analysis",
@@ -1155,7 +1496,7 @@ elif page == "🎬  Video Analysis":
             """
         <div class='section-card'>
             <div class='section-title'>🔴 Live CCTV Monitoring (SmartDetect)</div>
-            <p style='font-size:0.85rem; color:#a8c4e0; margin:0'>
+            <p style='font-size:0.85rem; color:#a8c4e0; margin:0; line-height:1.6'>
             Connects to your local camera for real-time <b>Motion Detection</b> and <b>Human Tracking</b>. 
             The system uses background subtraction to flag movement and Haar Cascades to identify people.
             </p>
@@ -1209,7 +1550,8 @@ elif page == "🎬  Video Analysis":
                         st.markdown(
                             f"""
                         <div style='text-align:center; padding:1rem; background:var(--bg-card);
-                                    border:1px solid var(--border); border-radius:12px'>
+                                    backdrop-filter:blur(12px);
+                                    border:1px solid var(--glass-border); border-radius:14px'>
                             <div style='font-size:0.7rem; color:#6b8cad; font-family:Space Mono,monospace'>LIVE STREAM</div>
                             <div style='font-size:2.5rem; font-weight:700; color:{risk_color};
                                         font-family:Space Mono,monospace; margin:8px 0'>{score}</div>
@@ -1241,9 +1583,9 @@ elif page == "🎬  Video Analysis":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: GEO CHANGE DETECTION
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "🌍  Geo Change":
+elif page == "🌍 Geo Change":
     st.markdown(
-        "<div class='hero-title' style='margin-bottom:1.5rem'>🌍 Geo Change Detection</div>",
+        "<div class='page-title'>🌍 Geo Change Detection</div>",
         unsafe_allow_html=True,
     )
 
@@ -1317,7 +1659,8 @@ elif page == "🌍  Geo Change":
                 <div style='color:#00e676; font-weight:600; font-size:0.9rem'>
                     ✅ Images matched (SSIM: {geo_result['ssim']:.3f})
                 </div>
-                <div style='background:rgba(0,229,255,0.08); border:1px solid {source_color}40;
+                <div style='background:rgba(0,229,255,0.06); backdrop-filter:blur(8px);
+                            border:1px solid {source_color}40;
                             color:{source_color}; padding:3px 12px; border-radius:20px;
                             font-family:Space Mono,monospace; font-size:0.72rem;
                             letter-spacing:0.5px'>
@@ -1442,7 +1785,7 @@ elif page == "🌍  Geo Change":
                             "edge_density": 0.0,
                             "brightness_std": 0.0,
                         }
-                        explanation = generate_explanation(mock_result, int(geo_result["change_pct"]), geo_risk)
+                        explanation = generate_explanation(mock_result, int(geo_result["change_pct"]), geo_risk, geo_result["new_resized"])
                     st.markdown(
                         f"""
                     <div class='chat-ai'>
@@ -1457,9 +1800,9 @@ elif page == "🌍  Geo Change":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: AI CHAT
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "🤖  AI Chat":
+elif page == "🤖 AI Chat":
     st.markdown(
-        "<div class='hero-title' style='margin-bottom:1.5rem'>🤖 AI Chat Assistant</div>",
+        "<div class='page-title'>🤖 AI Chat Assistant</div>",
         unsafe_allow_html=True,
     )
 
@@ -1467,7 +1810,7 @@ elif page == "🤖  AI Chat":
         """
     <div class='section-card'>
         <div class='section-title'>💬 Powered by Gemini (Local LLM)</div>
-        <p style='font-size:0.85rem; color:#a8c4e0; margin:0'>
+        <p style='font-size:0.85rem; color:#a8c4e0; margin:0; line-height:1.6'>
         Ask questions about anomaly detection, risk levels, or get AI-powered explanations.
         Connects to your local Gemini instance running Gemini 2.5 Flash or Gemini 2.5 Flash.
         </p>
@@ -1504,8 +1847,7 @@ elif page == "🤖  AI Chat":
         if not st.session_state.chat_messages:
             st.markdown(
                 """
-            <div style='text-align:center; padding:3rem; color:#3a5270;
-                        font-family:Space Mono,monospace; font-size:0.8rem'>
+            <div class='empty-state'>
                 ⬡ No messages yet. Ask something above or use a quick prompt.
             </div>
             """,
@@ -1565,9 +1907,9 @@ elif page == "🤖  AI Chat":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: HISTORY
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "📋  History":
+elif page == "📋 History":
     st.markdown(
-        "<div class='hero-title' style='margin-bottom:1.5rem'>📋 Detection History</div>",
+        "<div class='page-title'>📋 Detection History</div>",
         unsafe_allow_html=True,
     )
 
@@ -1576,8 +1918,7 @@ elif page == "📋  History":
     if not history_data:
         st.markdown(
             """
-        <div style='text-align:center; padding:4rem; color:#3a5270;
-                    font-family:Space Mono,monospace; font-size:0.85rem'>
+        <div class='empty-state'>
             ⬡ No detection history yet.<br/>
             <span style='font-size:0.75rem'>Run an analysis to start logging results.</span>
         </div>
@@ -1657,15 +1998,15 @@ elif page == "📋  History":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: ABOUT PROJECT
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "ℹ️  About Project":
+elif page == "ℹ️ About":
     st.markdown(
-        "<div class='hero-title' style='margin-bottom:1.5rem'>ℹ️ About SmartDetect</div>",
+        "<div class='page-title'>ℹ️ About SmartDetect</div>",
         unsafe_allow_html=True,
     )
     
     st.markdown(
         """
-        <div class='section-card'>
+        <div class='section-card stagger-1'>
             <div class='section-title'>🚀 What is SmartDetect?</div>
             <p style='font-size:0.95rem; line-height:1.6; color:#e8f4fd; margin-top:10px;'>
                 <b>SmartDetect</b> is a state-of-the-art AI-powered anomaly detection and computer vision analysis platform. 
@@ -1684,7 +2025,7 @@ elif page == "ℹ️  About Project":
 
     st.markdown(
         """
-        <div class='section-card'>
+        <div class='section-card stagger-2'>
             <div class='section-title'>🛠️ Core Technologies</div>
             <ul style='font-size:0.95rem; line-height:1.8; color:#e8f4fd; margin-top:10px;'>
                 <li><b>OpenCV</b>: High-performance computer vision for contour mapping, edge detection, and real-time video processing.</li>
@@ -1699,24 +2040,24 @@ elif page == "ℹ️  About Project":
 
     st.markdown(
         """
-        <div class='section-card'>
+        <div class='section-card stagger-3'>
             <div class='section-title'>🎯 Key Features</div>
             <div style='display:flex; flex-direction:column; gap:12px; margin-top:10px;'>
-                <div style='display:flex; gap:12px; align-items:flex-start;'>
+                <div class='feature-item'>
                     <div style='font-size:1.3rem; min-width:30px'>🖼️</div>
                     <div>
                         <div style='font-weight:600; font-size:0.95rem'>Image & Structural Defect Analysis</div>
                         <div style='font-size:0.85rem; color:#6b8cad; margin-top:2px'>Upload photos of materials, roads, or infrastructure to detect cracks, dents, and contamination using AI bounding boxes.</div>
                     </div>
                 </div>
-                <div style='display:flex; gap:12px; align-items:flex-start;'>
+                <div class='feature-item'>
                     <div style='font-size:1.3rem; min-width:30px'>🌍</div>
                     <div>
                         <div style='font-weight:600; font-size:0.95rem'>Geographic Change Detection</div>
                         <div style='font-size:0.85rem; color:#6b8cad; margin-top:2px'>Compare "Before" and "After" satellite imagery to automatically highlight and categorize new buildings, roads, or environmental shifts.</div>
                     </div>
                 </div>
-                <div style='display:flex; gap:12px; align-items:flex-start;'>
+                <div class='feature-item'>
                     <div style='font-size:1.3rem; min-width:30px'>🔴</div>
                     <div>
                         <div style='font-weight:600; font-size:0.95rem'>Live CCTV Simulation</div>
@@ -1731,7 +2072,7 @@ elif page == "ℹ️  About Project":
 
     st.markdown(
         """
-        <div class='section-card'>
+        <div class='section-card stagger-4'>
             <div class='section-title'>👨‍💻 Built By</div>
             <div style='display:flex; flex-direction:column; gap:8px; margin-top:10px;'>
                 <div style='font-size:0.95rem; color:#e8f4fd; display:flex; align-items:center; gap:8px;'>
