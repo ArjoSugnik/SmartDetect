@@ -51,7 +51,7 @@ def check_gemini_status() -> dict:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def generate_explanation(result: dict, score: int, risk_level: str) -> str:
+def generate_explanation(result: dict, score: int, risk_level: str, image_bgr: np.ndarray = None) -> str:
     """
     Generate an AI explanation for a detected anomaly using Gemini.
     """
@@ -64,26 +64,34 @@ def generate_explanation(result: dict, score: int, risk_level: str) -> str:
         "CRITICAL RULES: \n"
         "- DO NOT write any introduction or preamble (e.g., 'As an expert...', 'Here is the analysis...').\n"
         "- DO NOT refer to yourself.\n"
+        "- If an image is provided, rely primarily on what you visually see in the image to determine what the anomaly is (e.g. a road crack, a dent, etc.). Use the provided metric stats only as supporting context.\n"
         "- Jump straight into the analysis using clear bullet points.\n"
         "- Aim for 300-500 words to give a thorough breakdown of potential causes and impacts.\n"
         "- End with a clear, multi-step recommended action plan."
     )
 
     context = (
-        f"Anomaly detection result:\n"
+        f"Anomaly detection metrics from the system:\n"
         f"- Type: {result.get('anomaly_type', 'Unknown')}\n"
         f"- Risk Score: {score}/100 ({risk_level} risk)\n"
         f"- Contours found: {result.get('contour_count', 0)}\n"
         f"- Anomalous area: {result.get('anomaly_area_pct', 0):.2f}%\n"
         f"- Edge density: {result.get('edge_density', 0):.4f}\n"
         f"- Brightness std dev: {result.get('brightness_std', 0):.1f}\n\n"
-        "Provide a comprehensive analysis explaining what this anomaly may indicate in the real world, the potential severity, and why."
+        "Please look at the provided image (if any) and these metrics. Identify what the physical object is and what the actual defect is in the real world, explain its potential severity, and why."
     )
+
+    contents = []
+    if image_bgr is not None:
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(image_rgb)
+        contents.append(pil_img)
+    contents.append(context)
 
     try:
         response = client.models.generate_content(
             model=MODEL,
-            contents=context,
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.7,
