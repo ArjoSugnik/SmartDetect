@@ -1,23 +1,14 @@
-import tempfile
-import os
 import cv2
+import numpy as np
 
-# Create dummy video bytes
-class DummyUpload:
-    def __init__(self):
-        self.name = "myvideo.mp4"
-        with open("dummy.mp4", "rb") as f:
-            self.data = f.read()
-    def read(self):
-        return self.data
+# create a dummy video
+out = cv2.VideoWriter("dummy.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 25, (100, 100))
+for i in range(50):
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    cv2.circle(frame, (50, 50), i, (255, 255, 255), -1)
+    out.write(frame)
+out.release()
 
-video_file = DummyUpload()
-
-with tempfile.NamedTemporaryFile(delete=False, suffix="." + video_file.name.split(".")[-1]) as tmp:
-    tmp.write(video_file.read())
-    tmp_path = tmp.name
-
-cap = cv2.VideoCapture(tmp_path)
-print("Opened:", cap.isOpened())
-cap.release()
-os.unlink(tmp_path)
+from video_processing import process_video_frames
+res = process_video_frames("dummy.mp4", 5)
+print("Result frames:", len(res))
