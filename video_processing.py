@@ -3,6 +3,11 @@ video_processing.py — Video frame extraction, anomaly analysis, and live simul
 """
 
 import cv2
+
+print(cv2.__file__)
+print(cv2.__version__)
+print(hasattr(cv2, "CascadeClassifier"))
+
 import numpy as np
 from typing import List, Tuple, Optional
 from anomaly import detect_image_anomaly, compute_risk_score
