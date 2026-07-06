@@ -14,7 +14,7 @@ Welcome to **SmartDetect**! 👋
 
 SmartDetect acts as a tireless set of eyes, using AI to scan images, live camera feeds, videos, and satellite maps to find anomalies that humans might miss. Powered by OpenCV and **Groq's ultra-fast Llama models**, it features a stunning **dark cyber-industrial UI** and lightning-fast inference.
 
-> 🌐 **Live demo:** https://smartdetect-anomaly-detection-correction.streamlit.app
+> 🌐 **Live demo:** [https://smartdetect.streamlit.app](https://smartdetect.streamlit.app/)
 
 ---
 
