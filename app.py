@@ -1369,36 +1369,21 @@ elif page == "🎬 Video":
             async_processing=True,
         )
 
-        if webrtc_ctx.state.playing and webrtc_ctx.video_processor:
-            processor = webrtc_ctx.video_processor
-            result = processor.result
-            score = processor.score
-            risk_level = processor.risk_level
-
-            risk_color = "#ff1744" if (result.get("human_detected") or risk_level == "HIGH") else \
-                         ("#ffab00" if risk_level == "MEDIUM" else "#00e676")
-
+        if webrtc_ctx.state.playing:
             st.markdown(
-                f"""
-            <div style='text-align:center; padding:1rem; background:var(--glass-bg);
+                """
+            <div style='text-align:center; padding:0.8rem 1rem; background:var(--glass-bg);
                         backdrop-filter:blur(12px);
-                        border:1px solid var(--glass-border); border-radius:14px; margin-top:1rem'>
-                <div style='font-size:0.7rem; color:#6b8cad; font-family:var(--font-mono); letter-spacing:2px'>LIVE STREAM ACTIVE</div>
-                <div style='font-size:2.5rem; font-weight:700; color:{risk_color};
-                            font-family:var(--font-mono); margin:8px 0'>{score}</div>
-                <div style='color:{risk_color}; font-weight:600'>{risk_level} RISK</div>
-                <div style='font-size:0.78rem; color:#6b8cad; margin-top:6px; font-weight:700'>
-                    {result['anomaly_type'].upper()}
-                </div>
-                <div style='font-size:0.65rem; color:#6b8cad; margin-top:8px'>
-                    Humans: {result.get('face_count', 0) + result.get('body_count', 0)} ·
-                    Motion: {result.get('anomaly_area_pct', 0):.1f}%
-                </div>
+                        border:1px solid rgba(0,234,255,0.18); border-radius:12px; margin-top:0.8rem'>
+                <span style='color:#00e676; font-size:0.75rem; font-weight:700; letter-spacing:2px'>● LIVE</span>
+                <span style='color:#6b8cad; font-size:0.75rem; margin-left:12px'>
+                    Real-time risk score, human count, and motion % are displayed in the video HUD overlay.
+                </span>
             </div>
             """,
                 unsafe_allow_html=True,
             )
-        elif not webrtc_ctx.state.playing:
+        else:
             st.markdown(
                 """
             <div class='empty-state'>
