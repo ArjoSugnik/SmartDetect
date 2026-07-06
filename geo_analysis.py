@@ -7,12 +7,12 @@ Pipeline v3 (high-sensitivity):
   4. Multi-scale change mask (Otsu + fixed threshold + edge-aware)
   5. Morphological filtering → merge blobs, kill noise
   6. Strict area / coverage gates → never box the whole image
-  7. Per-region Gemini vision call → validate & classify
+  7. Per-region Groq vision call → validate & classify
   8. Confidence-coloured boxes → Red=High / Yellow=Medium / Green=Low
   9. build_change_table() + draw_geo_annotations() with min_confidence filter
 
-Gemini model: "gemini" via local Gemini.
-Falls back to colour/shape CV heuristics if Gemini is not running.
+Groq model: Llama 3.2 Vision via Groq API.
+Falls back to colour/shape CV heuristics if Groq is not running.
 """
 
 import cv2
@@ -29,13 +29,13 @@ except ImportError:
     HAS_SKIMAGE = False
 
 # ─────────────────────────────────── Config ───────────────────────────────────
-LLAVA_MODEL          = "gemini-2.5-flash"
-SSIM_THRESHOLD       = 0.20   # below → reject as incompatible images
+SSIM_THRESHOLD       = 0.05   # lowered to allow comparison of massive urban changes over long time periods
 DIFF_THRESHOLD       = 22     # 0-255; LOWER = more sensitive to subtle changes
 MIN_REGION_AREA      = 150    # px²  — very sensitive for dense urban changes
 MAX_REGION_AREA_FRAC = 0.85   # increased to catch large urban redevelopments
 
-from gemini_helper import client, MODEL
+from groq_helper import client, VISION_MODEL
+import io
 
 
 # ─────────────────────────── Confidence colour map ───────────────────────────
@@ -260,7 +260,7 @@ def _extract_regions(mask: np.ndarray, img_shape) -> List[dict]:
     return out[:50]  # Allow up to 50 regions for dense urban areas
 
 
-# ──────────────────────── Gemini per-region classifier ────────────────────────
+# ──────────────────────── Groq per-region classifier ─────────────────────────
 
 _LLAVA_SYS = """You are an advanced geospatial change detection AI integrated with a computer vision pipeline.
 
@@ -426,8 +426,8 @@ _VALID_CATEGORIES = {
 
 
 from PIL import Image
-def _pil_crop(img: np.ndarray, bbox: Tuple, pad: int = 40) -> Image.Image:
-    """Return a PIL Image crop (with padding) from img for more context."""
+def _crop_to_base64(img: np.ndarray, bbox: Tuple, pad: int = 40) -> str:
+    """Return a base64-encoded JPEG crop (with padding) from img for Groq vision."""
     h, w    = img.shape[:2]
     x, y, rw, rh = bbox
     x1 = max(0, x - pad);  y1 = max(0, y - pad)
@@ -437,12 +437,19 @@ def _pil_crop(img: np.ndarray, bbox: Tuple, pad: int = 40) -> Image.Image:
         crop = img
     # Convert BGR to RGB
     crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-    return Image.fromarray(crop_rgb)
+    pil_img = Image.fromarray(crop_rgb)
+    # Resize if too large (Groq 4MB limit for base64)
+    max_size = 800
+    if pil_img.width > max_size or pil_img.height > max_size:
+        pil_img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    pil_img.save(buffer, format="JPEG", quality=85)
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
-def _gemini_classify(old_img: np.ndarray, new_img: np.ndarray, bbox: Tuple) -> dict:
+def _groq_classify(old_img: np.ndarray, new_img: np.ndarray, bbox: Tuple) -> dict:
     """
-    Send both image crops to Gemini and parse JSON response.
+    Send both image crops to Groq Vision and parse JSON response.
     Uses the comprehensive system prompt for validation-style classification.
     Returns: {category, description, confidence, source}
     """
@@ -450,19 +457,24 @@ def _gemini_classify(old_img: np.ndarray, new_img: np.ndarray, bbox: Tuple) -> d
         return _cv_fallback(old_img, new_img, bbox)
         
     try:
-        from google.genai import types
+        old_b64 = _crop_to_base64(old_img, bbox)
+        new_b64 = _crop_to_base64(new_img, bbox)
         
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=[_pil_crop(old_img, bbox), _pil_crop(new_img, bbox), _LLAVA_PROMPT],
-            config=types.GenerateContentConfig(
-                system_instruction=_LLAVA_SYS,
-                temperature=0.05,
-                response_mime_type="application/json"
-            )
+        response = client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=[
+                {"role": "system", "content": _LLAVA_SYS},
+                {"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{old_b64}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{new_b64}"}},
+                    {"type": "text", "text": _LLAVA_PROMPT}
+                ]}
+            ],
+            temperature=0.05,
+            max_tokens=500,
         )
-        raw = response.text
-        # Strip any markdown fences Gemini might wrap around JSON
+        raw = response.choices[0].message.content
+        # Strip any markdown fences the model might wrap around JSON
         raw = raw.replace("```json", "").replace("```", "").strip()
         p   = json.loads(raw)
 
@@ -474,7 +486,7 @@ def _gemini_classify(old_img: np.ndarray, new_img: np.ndarray, bbox: Tuple) -> d
             "category":    category,
             "description": str(p.get("description", "Change detected.")),
             "confidence":  float(max(0.0, min(1.0, p.get("confidence", 0.5)))),
-            "source":      "gemini",
+            "source":      "groq",
         }
     except Exception as e:
         return _cv_fallback(old_img, new_img, bbox)
@@ -482,7 +494,7 @@ def _gemini_classify(old_img: np.ndarray, new_img: np.ndarray, bbox: Tuple) -> d
 
 def _cv_fallback(old_img: np.ndarray, new_img: np.ndarray, bbox: Tuple) -> dict:
     """
-    Colour/shape heuristic classification when Gemini is offline.
+    Colour/shape heuristic classification when Groq is offline.
     Analyses HSV statistics and geometry of the changed crop.
     """
     h, w   = old_img.shape[:2]
@@ -625,10 +637,19 @@ def draw_geo_annotations(
 
 # ───────────────────────────── Public API ────────────────────────────────────
 
+def _resize_if_huge(img: np.ndarray, max_dim: int = 1200) -> np.ndarray:
+    """Downscale excessively large images to maintain performance and avoid API timeouts."""
+    h, w = img.shape[:2]
+    if max(h, w) > max_dim:
+        scale = max_dim / float(max(h, w))
+        return cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    return img
+
+
 def compare_geo_images(
     old_img: np.ndarray,
     new_img: np.ndarray,
-    use_gemini: bool = True,
+    use_groq: bool = True,
 ) -> dict:
     """
     Run the full geo change detection pipeline v3.
@@ -640,11 +661,14 @@ def compare_geo_images(
       4. CLAHE local contrast normalisation
       5. Multi-scale change mask (Otsu + fixed + edge-aware)
       6. Region extraction → up to 25 regions
-      7. Per-region Gemini or CV fallback classification
+      7. Per-region Groq or CV fallback classification
       8. Annotated output image
 
     Returns dict with results, annotated image, and heatmap.
     """
+    # 0. Prevent massive images from freezing the pipeline
+    old_img = _resize_if_huge(old_img)
+
     # 1. Resize new → match old resolution
     th, tw      = old_img.shape[:2]
     new_resized = cv2.resize(new_img, (tw, th), interpolation=cv2.INTER_AREA)
@@ -669,7 +693,7 @@ def compare_geo_images(
             "similar": False, "ssim": round(score, 4),
             "change_pct": 0.0, "region_count": 0,
             "regions": [], "annotated_img": new_registered,
-            "new_resized": new_registered, "gemini_used": False,
+            "new_resized": new_registered, "groq_used": False,
             "heatmap_img": None,
         }
 
@@ -686,15 +710,15 @@ def compare_geo_images(
     raw_regions = _extract_regions(mask, old_img.shape)
 
     # 8. Classify each region
-    gemini_used = False
+    groq_used = False
     enriched   = []
     for idx, r in enumerate(raw_regions, 1):
-        if use_gemini:
-            cls = _gemini_classify(old_img, new_registered, r["bbox"])
-            if cls["source"] == "gemini":
-                gemini_used = True
+        if use_groq:
+            cls = _groq_classify(old_img, new_registered, r["bbox"])
+            if cls["source"] == "groq":
+                groq_used = True
             else:
-                use_gemini = False  # Fallback to CV for remaining regions to save time
+                use_groq = False  # Fallback to CV for remaining regions to save time
         else:
             cls = _cv_fallback(old_img, new_registered, r["bbox"])
 
@@ -726,7 +750,7 @@ def compare_geo_images(
         "regions":       enriched,
         "annotated_img": annotated,
         "new_resized":   new_registered,
-        "gemini_used":    gemini_used,
+        "groq_used":      groq_used,
         "heatmap_img":   heatmap_blend,
     }
 
@@ -759,7 +783,7 @@ def build_change_table(regions: List[dict], min_confidence: float = 0.0) -> List
             "Confidence":   f"{r['confidence']*100:.0f}%",
             "Level":        r["conf_label"],
             "Area (px²)":   f"{r['area']:,}",
-            "Detected By":  "🤖 Gemini" if r.get("source") == "gemini" else "🔬 CV Analysis",
+            "Detected By":  "🤖 Groq" if r.get("source") == "groq" else "🔬 CV Analysis",
         })
     if not rows:
         rows.append({
