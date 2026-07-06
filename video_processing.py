@@ -9,8 +9,10 @@ from anomaly import detect_image_anomaly, compute_risk_score
 from utils import draw_anomaly_overlay
 
 # Load Haar Cascades for human/face detection (CCTV style)
-FACE_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-BODY_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_upperbody.xml')
+import os
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+FACE_CASCADE = cv2.CascadeClassifier(os.path.join(DATA_DIR, 'haarcascade_frontalface_default.xml'))
+BODY_CASCADE = cv2.CascadeClassifier(os.path.join(DATA_DIR, 'haarcascade_upperbody.xml'))
 
 
 def create_background_subtractor():
