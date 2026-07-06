@@ -11,21 +11,16 @@ import tempfile
 from datetime import datetime
 from PIL import Image
 
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-HISTORY_FILE = os.path.join(_SCRIPT_DIR, "detection_history.json")
+import streamlit as st
 
 
 # ── History persistence ────────────────────────────────────────────────────────
 
 def load_history() -> list:
-    """Load detection history from JSON file. Returns empty list if not found."""
-    if not os.path.exists(HISTORY_FILE):
-        return []
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return []
+    """Load detection history from Streamlit session state."""
+    if "history" not in st.session_state:
+        st.session_state.history = []
+    return st.session_state.history
 
 
 def save_history_entry(
@@ -36,7 +31,7 @@ def save_history_entry(
     details: dict,
 ) -> None:
     """
-    Append a new detection result to the history JSON file.
+    Append a new detection result to the session history.
     Strips non-serializable fields (raw contours) before saving.
     """
     history = load_history()
@@ -57,19 +52,7 @@ def save_history_entry(
         "details": clean_details,
     }
     history.append(entry)
-
-    # Atomic write: write to temp file, then rename to prevent corruption
-    dir_name = os.path.dirname(HISTORY_FILE) or "."
-    try:
-        fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
-        with os.fdopen(fd, "w") as tmp_f:
-            json.dump(history, tmp_f, indent=2)
-        # On Windows, os.replace is atomic and overwrites existing file
-        os.replace(tmp_path, HISTORY_FILE)
-    except OSError:
-        # Fallback: direct write if atomic write fails (e.g. permissions)
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(history, f, indent=2)
+    st.session_state.history = history
 
 
 def _is_json_serializable(val) -> bool:
