@@ -234,8 +234,10 @@ def _extract_regions(mask: np.ndarray, img_shape) -> List[dict]:
         area = cv2.contourArea(c)
         if area < MIN_REGION_AREA:
             continue
-        if area > MAX_REGION_AREA_FRAC * total:
-            continue  # Whole-image → exposure/lighting shift, not real
+        
+        # We no longer strictly reject area > MAX_REGION_AREA_FRAC * total. 
+        # Massive developments or complete land-use changes can trigger this,
+        # and Groq Vision or cv_fallback is capable of classifying large crops correctly.
 
         x, y, rw, rh = cv2.boundingRect(c)
         if rw == 0 or rh == 0:
