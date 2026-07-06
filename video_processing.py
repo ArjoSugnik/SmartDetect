@@ -3,13 +3,11 @@ video_processing.py — Video frame extraction, anomaly analysis, and live simul
 """
 
 import cv2
-
-print(cv2.__file__)
-print(cv2.__version__)
-print(hasattr(cv2, "CascadeClassifier"))
-
 import numpy as np
+import threading
+import av
 from typing import List, Tuple, Optional
+from streamlit_webrtc import VideoProcessorBase
 from anomaly import detect_image_anomaly, compute_risk_score
 from utils import draw_anomaly_overlay
 
@@ -94,104 +92,122 @@ def process_camera_frame(cv_img: np.ndarray) -> dict:
     return detect_image_anomaly(cv_img)
 
 
-def get_live_webcam_frame(
-    tick: int,
-    cap: Optional[cv2.VideoCapture] = None,
-    back_sub=None,
-) -> Tuple[Optional[np.ndarray], dict]:
+class SmartDetectVideoProcessor(VideoProcessorBase):
     """
-    Capture a real frame from the system webcam and process for motion/humans.
+    WebRTC video processor for browser-based live CCTV simulation.
 
-    Args:
-        tick:     Frame index (unused in logic, kept for API compat).
-        cap:      Optional pre-opened VideoCapture. If None, opens & closes per call.
-        back_sub: Optional background subtractor. If None, creates a throwaway one.
+    Runs motion detection (background subtraction), human detection (Haar cascades),
+    and annotates frames with a CCTV-style HUD — all inside the recv() callback
+    which executes on every incoming WebRTC video frame.
 
-    Returns (processed_frame_RGB, detection_metadata).
-    If webcam fails, returns (None, error_dict).
+    Thread-safe properties (result, score, risk_level) allow the Streamlit main
+    thread to read the latest detection metrics for display alongside the video.
     """
-    own_cap = False
-    if cap is None:
-        cap = cv2.VideoCapture(0)
-        own_cap = True
-    if not cap.isOpened():
-        if own_cap:
-            cap.release()
-        return None, {"anomaly_type": "Camera Error", "error": "No webcam found",
-                      "contour_count": 0, "anomaly_area_pct": 0.0,
-                      "human_detected": False, "face_count": 0, "body_count": 0,
-                      "brightness_std": 0.0, "edge_density": 0.0}
 
-    ret, frame = cap.read()
-    if own_cap:
-        cap.release()
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._back_sub = create_background_subtractor()
+        self._result: dict = {
+            "anomaly_type": "Initializing...",
+            "contour_count": 0,
+            "anomaly_area_pct": 0.0,
+            "human_detected": False,
+            "face_count": 0,
+            "body_count": 0,
+            "brightness_std": 0.0,
+            "edge_density": 0.0,
+        }
+        self._score: int = 0
+        self._risk_level: str = "LOW"
 
-    if not ret:
-        return None, {"anomaly_type": "Capture Error", "error": "Could not read frame",
-                      "contour_count": 0, "anomaly_area_pct": 0.0,
-                      "human_detected": False, "face_count": 0, "body_count": 0,
-                      "brightness_std": 0.0, "edge_density": 0.0}
+    @property
+    def result(self) -> dict:
+        with self._lock:
+            return dict(self._result)
 
-    if back_sub is None:
-        back_sub = create_background_subtractor()
+    @property
+    def score(self) -> int:
+        with self._lock:
+            return self._score
 
-    h, w = frame.shape[:2]
+    @property
+    def risk_level(self) -> str:
+        with self._lock:
+            return self._risk_level
 
-    # 1. Motion Detection (Background Subtraction)
-    fg_mask = back_sub.apply(frame)
-    # Threshold and noise removal
-    _, fg_mask = cv2.threshold(fg_mask, 200, 255, cv2.THRESH_BINARY)
-    motion_px = np.count_nonzero(fg_mask)
-    motion_score = (motion_px / (h * w)) * 100
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        """Process each incoming WebRTC video frame with the full CCTV pipeline."""
+        img = frame.to_ndarray(format="bgr24")
+        h, w = img.shape[:2]
 
-    # 2. Human Detection (Haar Cascades)
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = FACE_CASCADE.detectMultiScale(gray, 1.1, 4)
-    bodies = BODY_CASCADE.detectMultiScale(gray, 1.1, 4)
+        # 1. Motion Detection (Background Subtraction)
+        fg_mask = self._back_sub.apply(img)
+        _, fg_mask = cv2.threshold(fg_mask, 200, 255, cv2.THRESH_BINARY)
+        motion_px = np.count_nonzero(fg_mask)
+        motion_score = (motion_px / (h * w)) * 100
 
-    found_human = len(faces) > 0 or len(bodies) > 0
+        # 2. Human Detection (Haar Cascades)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = FACE_CASCADE.detectMultiScale(gray, 1.1, 4)
+        bodies = BODY_CASCADE.detectMultiScale(gray, 1.1, 4)
+        found_human = len(faces) > 0 or len(bodies) > 0
 
-    # 3. Annotation (CCTV Style)
-    annotated = frame.copy()
+        # 3. Annotation (CCTV Style)
+        annotated = img.copy()
 
-    # HUD Overlay
-    cv2.rectangle(annotated, (0, 0), (w, 40), (10, 10, 10), -1)
-    status_color = (0, 0, 255) if (found_human or motion_score > 2) else (0, 255, 0)
-    status_text = "ALERT" if found_human else ("MOTION" if motion_score > 2 else "SECURE")
+        # HUD Overlay
+        cv2.rectangle(annotated, (0, 0), (w, 40), (10, 10, 10), -1)
+        status_color = (0, 0, 255) if (found_human or motion_score > 2) else (0, 255, 0)
+        status_text = "ALERT" if found_human else ("MOTION" if motion_score > 2 else "SECURE")
 
-    cv2.putText(annotated, f"SmartDetect CCTV - {status_text}", (15, 27),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+        cv2.putText(annotated, f"SmartDetect CCTV - {status_text}", (15, 27),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
 
-    # Draw motion contours in Cyan
-    cnts, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for c in cnts:
-        if cv2.contourArea(c) > 500:
-            x, y, mw, mh = cv2.boundingRect(c)
-            cv2.rectangle(annotated, (x, y), (x+mw, y+mh), (255, 255, 0), 1)
+        # Draw motion contours in Cyan
+        cnts, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in cnts:
+            if cv2.contourArea(c) > 500:
+                x, y, mw, mh = cv2.boundingRect(c)
+                cv2.rectangle(annotated, (x, y), (x+mw, y+mh), (255, 255, 0), 1)
 
-    # Draw Humans in Red
-    for (x, y, fw, fh) in faces:
-        cv2.rectangle(annotated, (x, y), (x+fw, y+fh), (0, 0, 255), 2)
-        cv2.putText(annotated, "HUMAN FACE", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        # Draw Humans in Red
+        for (x, y, fw, fh) in faces:
+            cv2.rectangle(annotated, (x, y), (x+fw, y+fh), (0, 0, 255), 2)
+            cv2.putText(annotated, "HUMAN FACE", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
-    for (x, y, bw, bh) in bodies:
-        cv2.rectangle(annotated, (x, y), (x+bw, y+bh), (0, 0, 255), 2)
-        cv2.putText(annotated, "HUMAN BODY", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        for (x, y, bw, bh) in bodies:
+            cv2.rectangle(annotated, (x, y), (x+bw, y+bh), (0, 0, 255), 2)
+            cv2.putText(annotated, "HUMAN BODY", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
-    # Metadata
-    result = {
-        "anomaly_type": status_text if status_text != "SECURE" else "Static Scene",
-        "contour_count": len(cnts),
-        "anomaly_area_pct": motion_score,
-        "human_detected": found_human,
-        "face_count": len(faces),
-        "body_count": len(bodies),
-        "brightness_std": float(np.std(gray)),
-        "edge_density": 0.0  # simplified for speed
-    }
+        # Build metadata
+        result = {
+            "anomaly_type": status_text if status_text != "SECURE" else "Static Scene",
+            "contour_count": len(cnts),
+            "anomaly_area_pct": motion_score,
+            "human_detected": found_human,
+            "face_count": len(faces),
+            "body_count": len(bodies),
+            "brightness_std": float(np.std(gray)),
+            "edge_density": 0.0,  # simplified for speed
+        }
+        score, risk_level = compute_risk_score(result)
 
-    rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-    return rgb, result
+        # Bottom HUD bar with score/risk
+        cv2.rectangle(annotated, (0, h - 32), (w, h), (10, 10, 10), -1)
+        score_color = (0, 0, 255) if risk_level == "HIGH" else (
+            (0, 171, 255) if risk_level == "MEDIUM" else (0, 230, 118)
+        )
+        cv2.putText(annotated, f"Risk: {score} [{risk_level}]  |  Humans: {len(faces)+len(bodies)}  |  Motion: {motion_score:.1f}%",
+                    (15, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, score_color, 1)
+
+        # Thread-safe state update
+        with self._lock:
+            self._result = result
+            self._score = score
+            self._risk_level = risk_level
+
+        return av.VideoFrame.from_ndarray(annotated, format="bgr24")
+
 
 
 
