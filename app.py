@@ -23,9 +23,10 @@ from anomaly import detect_image_anomaly, compute_risk_score, STRUCTURAL_ANOMALY
 from video_processing import (
     process_video_frames,
     process_camera_frame,
-    get_live_webcam_frame,
+    SmartDetectVideoProcessor,
     create_background_subtractor,
 )
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
 from geo_analysis import compare_geo_images, build_change_table, draw_geo_annotations
 from groq_helper import generate_explanation, chat_with_assistant, analyze_image_structural, check_groq_status
 import time
@@ -1346,85 +1347,67 @@ elif page == "🎬 Video":
         <div class='section-card'>
             <div class='section-title'>🔴 Live CCTV Monitoring (SmartDetect)</div>
             <p style='font-size:0.85rem; color:#a8c4e0; margin:0; line-height:1.6'>
-            Connects to your local camera for real-time <b>Motion Detection</b> and <b>Human Tracking</b>. 
+            Streams your browser webcam for real-time <b>Motion Detection</b> and <b>Human Tracking</b>.
             The system uses background subtraction to flag movement and Haar Cascades to identify people.
+            All detections are rendered as a CCTV-style HUD directly on the video feed.
             </p>
         </div>
         """,
             unsafe_allow_html=True,
         )
 
-        col_ctrl, _ = st.columns([1, 3])
-        with col_ctrl:
-            sim_frames = st.slider("Monitoring duration (ticks)", 10, 1000, 100)
-            live_fps = st.slider("Simulation FPS", 1, 60, 15)
-            start_btn = st.button("▶️ Start Live Feed")
-            stop_btn = st.button("⏹️ Stop Feed")
+        RTC_CONFIGURATION = {
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+        }
 
-        # Handle button clicks (these trigger a rerun)
-        if start_btn:
-            st.session_state.run_sim = True
-            st.session_state._sim_tick = 0
-            # Create fresh background subtractor for this session
-            st.session_state._back_sub = create_background_subtractor()
-        if stop_btn:
-            st.session_state.run_sim = False
+        webrtc_ctx = webrtc_streamer(
+            key="smartdetect-live-cctv",
+            mode=WebRtcMode.SENDRECV,
+            rtc_configuration=RTC_CONFIGURATION,
+            video_processor_factory=SmartDetectVideoProcessor,
+            media_stream_constraints={"video": True, "audio": False},
+            async_processing=True,
+        )
 
-        if st.session_state.get("run_sim", False):
-            frame_placeholder = st.empty()
-            prog_placeholder = st.empty()
-            
-            tick = st.session_state.get("_sim_tick", 0)
-            back_sub = st.session_state.get("_back_sub")
+        if webrtc_ctx.state.playing and webrtc_ctx.video_processor:
+            processor = webrtc_ctx.video_processor
+            result = processor.result
+            score = processor.score
+            risk_level = processor.risk_level
 
-            while tick < sim_frames and st.session_state.get("run_sim", False):
-                prog_placeholder.progress((tick + 1) / sim_frames)
+            risk_color = "#ff1744" if (result.get("human_detected") or risk_level == "HIGH") else \
+                         ("#ffab00" if risk_level == "MEDIUM" else "#00e676")
 
-                frame_img, result = get_live_webcam_frame(tick, back_sub=back_sub)
-                if frame_img is None:
-                    st.error("⚠️ No webcam detected. Please connect a camera.")
-                    st.session_state.run_sim = False
-                    break
-
-                score, risk_level = compute_risk_score(result)
-
-                with frame_placeholder.container():
-                    c1, c2 = st.columns([2, 1])
-                    with c1:
-                        st.image(frame_img, caption=f"SmartDetect Live CCTV Feed — Tick {tick+1}/{sim_frames}", use_container_width=True)
-                    with c2:
-                        risk_color = "#ff1744" if (result.get("human_detected") or risk_level == "HIGH") else \
-                                     ("#ffab00" if risk_level == "MEDIUM" else "#00e676")
-
-                        st.markdown(
-                            f"""
-                        <div style='text-align:center; padding:1rem; background:var(--bg-card);
-                                    backdrop-filter:blur(12px);
-                                    border:1px solid var(--glass-border); border-radius:14px'>
-                            <div style='font-size:0.7rem; color:#6b8cad; font-family:Space Mono,monospace'>LIVE STREAM</div>
-                            <div style='font-size:2.5rem; font-weight:700; color:{risk_color};
-                                        font-family:Space Mono,monospace; margin:8px 0'>{score}</div>
-                            <div style='color:{risk_color}; font-weight:600'>{risk_level} RISK</div>
-                            <div style='font-size:0.78rem; color:#6b8cad; margin-top:6px; font-weight:700'>
-                                {result['anomaly_type'].upper()}
-                            </div>
-                            <div style='font-size:0.65rem; color:#6b8cad; margin-top:8px'>
-                                Humans: {result.get('face_count', 0) + result.get('body_count', 0)}<br/>
-                                Motion: {result.get('anomaly_area_pct', 0):.1f}%<br/>
-                                FPS: {live_fps}
-                            </div>
-                        </div>
-                        """,
-                            unsafe_allow_html=True,
-                        )
-
-                tick += 1
-                time.sleep(1.0 / live_fps)
-                
-            st.session_state._sim_tick = tick
-            if tick >= sim_frames:
-                st.session_state.run_sim = False
-                st.success("✅ Monitoring session completed.")
+            st.markdown(
+                f"""
+            <div style='text-align:center; padding:1rem; background:var(--glass-bg);
+                        backdrop-filter:blur(12px);
+                        border:1px solid var(--glass-border); border-radius:14px; margin-top:1rem'>
+                <div style='font-size:0.7rem; color:#6b8cad; font-family:var(--font-mono); letter-spacing:2px'>LIVE STREAM ACTIVE</div>
+                <div style='font-size:2.5rem; font-weight:700; color:{risk_color};
+                            font-family:var(--font-mono); margin:8px 0'>{score}</div>
+                <div style='color:{risk_color}; font-weight:600'>{risk_level} RISK</div>
+                <div style='font-size:0.78rem; color:#6b8cad; margin-top:6px; font-weight:700'>
+                    {result['anomaly_type'].upper()}
+                </div>
+                <div style='font-size:0.65rem; color:#6b8cad; margin-top:8px'>
+                    Humans: {result.get('face_count', 0) + result.get('body_count', 0)} ·
+                    Motion: {result.get('anomaly_area_pct', 0):.1f}%
+                </div>
+            </div>
+            """,
+                unsafe_allow_html=True,
+            )
+        elif not webrtc_ctx.state.playing:
+            st.markdown(
+                """
+            <div class='empty-state'>
+                📹 Click <b>START</b> above to begin live CCTV monitoring.<br/>
+                <span style='font-size:0.75rem; color:#465a7a'>Your browser will request camera permission.</span>
+            </div>
+            """,
+                unsafe_allow_html=True,
+            )
 
 
 
