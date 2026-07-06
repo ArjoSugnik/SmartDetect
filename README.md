@@ -1,85 +1,144 @@
 <div align="center">
   <h1>⬡ SmartDetect</h1>
-  <p><strong>Next-Generation AI Anomaly & Geographic Change Detection System</strong></p>
-  
+  <p><strong>Your Intelligent Assistant for Vision-Based Anomaly Detection & Correction</strong></p>
+
   [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-  [![Streamlit](https://img.shields.io/badge/Streamlit-1.31+-FF4B4B.svg)](https://streamlit.io/)
+  [![Streamlit](https://img.shields.io/badge/Streamlit-1.32+-FF4B4B.svg)](https://streamlit.io/)
   [![OpenCV](https://img.shields.io/badge/OpenCV-4.9+-5C3EE8.svg)](https://opencv.org/)
-  [![Gemini](https://img.shields.io/badge/Powered%20by-Google%20Gemini-00E5FF.svg)](https://deepmind.google/technologies/gemini/)
+  [![Groq](https://img.shields.io/badge/Powered%20by-Groq%20AI-f55036.svg)](https://groq.com/)
 </div>
 
 <br/>
 
-## 🚀 Overview
+Welcome to **SmartDetect**! 👋
 
-**SmartDetect** is a state-of-the-art computer vision platform designed to bridge the gap between raw pixel data and actionable intelligence. Built natively with Python and Streamlit, it leverages the blazing-fast reasoning of the **Google Gemini API** alongside traditional high-performance **OpenCV** algorithms to provide real-time spatial, structural, and geographic analysis.
+SmartDetect acts as a tireless set of eyes, using AI to scan images, live camera feeds, videos, and satellite maps to find anomalies that humans might miss. Powered by OpenCV and **Groq's ultra-fast Llama models**, it features a stunning **dark cyber-industrial UI** and lightning-fast inference.
 
-Whether you're inspecting infrastructure for micro-cracks, tracking urban redevelopment from satellite imagery, or running a live security feed, SmartDetect provides the insights you need instantly.
-
----
-
-## 🎯 Key Features
-
-- **🖼️ Image & Structural Defect Analysis**  
-  Upload high-resolution photos of materials, roads, or infrastructure. The system automatically detects cracks, dents, and anomalies, drawing bounding boxes and assigning a calculated **Risk Score (0-100)**.
-- **🌍 Geographic Change Detection**  
-  Compare "Before" and "After" satellite or drone imagery. Our pipeline uses ORB feature-based alignment, SSIM, and CLAHE to map precise structural shifts (e.g., new buildings, removed structures) and categorizes them with an AI-generated explanation.
-- **🔴 Live CCTV Simulation**  
-  Connects directly to your webcam for real-time motion detection and human tracking, processing up to **60 FPS**.
-- **🤖 Intelligent AI Chat**  
-  Got questions about an anomaly? The integrated SmartDetect AI (powered by Gemini) can comprehensively explain detection results, risk methodologies, and computer vision strategies.
-- **📋 Persistent History Logging**  
-  Automatically logs every analysis run into a searchable, exportable JSON database so you never lose an insight.
+> 🌐 **Live demo:** https://smartdetect-anomaly-detection-correction.streamlit.app
 
 ---
 
-## 🛠️ Core Technologies
+## ✨ Features at a Glance
 
-- **Frontend & Routing:** [Streamlit](https://streamlit.io/)
-- **Computer Vision:** [OpenCV](https://opencv.org/) & `skimage`
-- **AI / LLM / VLM Backend:** [Google Gemini 2.5 Flash](https://deepmind.google/technologies/gemini/) (via `google-genai`)
-- **Data Handling:** `numpy`, `pandas`, `pillow`
+The sleek top navigation bar provides access to **8 core sections**:
+
+| Tab | What it does |
+|-----|--------------|
+| 🏠 **Dashboard** | Landing overview with quick stats, system capabilities, and detection history summary. |
+| 🖼️ **Image** | Upload a photo and scan for structural anomalies (cracks, scratches, dents). Draws bounding boxes + a 0–100 risk score, with an optional Groq AI explanation and a heatmap view. |
+| 📷 **Camera** | Turns your webcam into a live CCTV — motion tracking + human/body detection in real time. |
+| 🎬 **Video** | Upload a video (or run a live simulation). Extracts frames and charts a chronological **Risk Timeline** showing exactly when anomalies occur. |
+| 🌍 **Geo Change** | Upload "before" and "after" satellite images. Uses SSIM + absolute-difference mapping to highlight deforestation, new construction, erosion, etc. |
+| 🤖 **AI Chat** | Chat directly with the Groq-powered assistant about your results, risk scoring, or anything vision-related. |
+| 📋 **History** | Every saved analysis is logged here for later review (exported to JSON). |
+| ℹ️ **About** | Project info and credits. |
 
 ---
 
-## ⚙️ Installation & Setup
+## 🚀 Step 1: Prerequisites
 
-### 1. Clone the Repository
+### 1. Install Python
+SmartDetect needs Python **3.10 or higher**.
+- **Windows / Mac:** Download from the [official Python website](https://www.python.org/downloads/).
+- **⚠️ Windows users:** On the first installer screen, check **"Add Python to PATH"** before clicking Install.
+
+### 2. Get the project code
 ```bash
-git clone https://github.com/yourusername/SmartDetect.git
-cd SmartDetect
+git clone https://github.com/yourusername/smartdetect-anomaly-detection-correction.git
 ```
+Or click **"Download ZIP"** on the repo page and extract it.
 
-### 2. Install Dependencies
-Ensure you have Python 3.10+ installed.
-```bash
-pip install -r requirements.txt
-```
+---
 
-### 3. Configure Gemini API
-You must have a valid Google Gemini API key. Add it to `gemini_helper.py` or export it as an environment variable (recommended for production):
-```bash
-export GEMINI_API_KEY="your_api_key_here"
-```
+## 🔑 Step 2: Get Your API Key
 
-### 4. Run the Application
+SmartDetect uses Groq for ultra-fast AI vision and text inference.
+
+1. Go to [GroqCloud](https://console.groq.com/).
+2. Sign in → **API Keys** → **Create API Key**.
+3. Copy the key and keep it safe.
+
+---
+
+## ⚙️ Step 3: Set Up the Project
+
+1. **Open a terminal** and navigate to the project folder:
+   ```bash
+   cd smartdetect-anomaly-detection-correction
+   ```
+2. **Create & activate a virtual environment:**
+   ```bash
+   python -m venv venv
+   # Windows:
+   .\venv\Scripts\activate
+   # Mac/Linux:
+   source venv/bin/activate
+   ```
+3. **Install the required packages:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Add your secrets.** Create a file at `.streamlit/secrets.toml` and fill in your keys:
+   ```toml
+   # ---- AI ----
+   GROQ_API_KEY = "paste_your_groq_key_here"
+   ```
+   > 🔒 **Never commit `secrets.toml` to a public repo.** Keep your keys private.
+   > Alternatively, you can export `GROQ_API_KEY` as an environment variable, and the app can also support a comma-separated list of keys to manage rate limits automatically.
+
+---
+
+## 🎉 Step 4: Run the Application
+
+With your `(venv)` active:
 ```bash
 streamlit run app.py
 ```
-*The web interface will automatically open at `http://localhost:8501`.*
+The app opens in your browser at `http://localhost:8501`.
 
 ---
 
-## 👨‍💻 Built By
+## ☁️ Step 5: Deploy to the Cloud (Streamlit Community Cloud)
 
-This project was architected, developed, and designed by the **SmartDetect Team**:
+Want a public link anyone can open? Deploy for free:
+
+1. **Push your code to GitHub** (keep the repo **Private** if it contains secrets).
+2. Go to [share.streamlit.io](https://share.streamlit.io/) → **New app**.
+3. Pick your repo, branch (`main`), and main file (`app.py`).
+4. Open **Advanced settings → Secrets** and paste the same contents as your `secrets.toml`.
+5. Click **Deploy**. Streamlit installs everything from `requirements.txt` and `packages.txt` automatically.
+
+**Files that make cloud deployment work:**
+- `requirements.txt` — Python packages (uses `opencv-contrib-python-headless` so it runs on a server with no display).
+- `packages.txt` — system libraries (e.g., `libgl1`).
+
+**To make it public:** In the app's **Settings → Sharing**, set it so anyone with the link can view.
+
+---
+
+## 🗂️ Project Structure
+
+```
+app.py                     # Main Streamlit app (UI, routing)
+anomaly.py                 # Image anomaly detection + risk scoring
+video_processing.py        # Frame processing, motion & human detection
+geo_analysis.py            # SSIM-based geographical change detection
+groq_helper.py             # Groq AI integration for vision & chat
+utils.py                   # History, reports, image helpers
+requirements.txt           # Python dependencies
+packages.txt               # System libraries for cloud deploy
+.streamlit/secrets.toml    # Your private keys (do NOT commit publicly)
+```
+
+---
+
+## 🧑‍💻 Built By
+
+Architected, developed, and designed as a Final Year Project by the **SmartDetect Team**:
 - ⬡ **Sugnik Tarafder**
 - ⬡ **Arifur Rahman**
 - ⬡ **Sk Shonju Ali**
 - ⬡ **Trishan Nayek**
 
----
-
-<div align="center">
-  <i>"Bridging the gap between pixels and intelligence."</i>
-</div>
+*Enjoy exploring the future of computer vision!*
