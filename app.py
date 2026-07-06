@@ -27,7 +27,7 @@ from video_processing import (
     create_background_subtractor,
 )
 from geo_analysis import compare_geo_images, build_change_table, draw_geo_annotations
-from gemini_helper import generate_explanation, chat_with_assistant, analyze_image_structural, check_gemini_status
+from groq_helper import generate_explanation, chat_with_assistant, analyze_image_structural, check_groq_status
 import time
 import cv2
 from utils import (
@@ -44,600 +44,446 @@ from utils import (
 st.markdown(
     """
 <style>
-/* ── Google Fonts ── */
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
+/* ═══════════════════════════════════════════════════════════════════════════
+   SMARTDETECT · PREMIUM CYBER FRONTEND v3
+   JetBrains Mono · True-black OLED animated orb BG · Deep glassmorphism
+   Ambient-light gradient heading · Glitch-free uploader · Max animation
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Root variables ── */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap');
+
 :root {
-    --bg-primary:   #04080f;
-    --bg-card:      rgba(13, 22, 37, 0.65);
-    --bg-card-solid: #0d1625;
-    --bg-card2:     rgba(17, 29, 46, 0.55);
-    --bg-navbar:    rgba(8, 14, 26, 0.72);
-    --accent:       #00e5ff;
-    --accent2:      #7b2fff;
-    --accent3:      #00b8d4;
-    --success:      #00e676;
-    --warning:      #ffab00;
-    --danger:       #ff1744;
-    --text-primary: #e8f4fd;
-    --text-muted:   #6b8cad;
-    --border:       rgba(0,229,255,0.12);
-    --glass-blur:   16px;
-    --glass-border: rgba(255,255,255,0.06);
+    --bg-black:      #000000;
+    --bg-near:       #050505;
+    --glass-bg:      rgba(10, 10, 15, 0.45);
+    --glass-bg-soft: rgba(12, 12, 20, 0.38);
+    --glass-bg-strong: rgba(8, 8, 14, 0.62);
+    --glass-border:  rgba(255, 255, 255, 0.07);
+    --glass-border-hover: rgba(0, 234, 255, 0.45);
+    --accent:        #00eaff;
+    --accent-cyan:   #00e5ff;
+    --accent2:       #a855ff;
+    --accent-violet: #7b2fff;
+    --accent-magenta:#ff2fd0;
+    --accent-blue:   #2f6bff;
+    --success:       #00ffa3;
+    --warning:       #ffc400;
+    --danger:        #ff2d6b;
+    --text-primary:  #eef6ff;
+    --text-muted:    #7a90b2;
+    --text-dim:      #465a7a;
+    --glass-blur:    24px;
+    --font-mono:     'JetBrains Mono', ui-monospace, 'SF Mono', 'Courier New', monospace;
+    --radius:        16px;
 }
 
-/* ── Keyframe Animations ── */
-@keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(24px); }
-    to   { opacity: 1; transform: translateY(0); }
+/* ═════════════════════════════════════════ KEYFRAMES ═══════════════════════════════════════ */
+@keyframes fadeInUp   { from { opacity:0; transform:translateY(32px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn     { from { opacity:0; } to { opacity:1; } }
+@keyframes slideInDown{ from { opacity:0; transform:translateY(-30px); } to { opacity:1; transform:translateY(0); } }
+@keyframes slideInLeft{ from { opacity:0; transform:translateX(-28px); } to { opacity:1; transform:translateX(0); } }
+@keyframes pulseGlow  { 0%,100% { box-shadow:0 0 10px rgba(0,234,255,0.18); } 50% { box-shadow:0 0 30px rgba(0,234,255,0.48); } }
+@keyframes ambientPulse { 0%,100% { opacity:0.4; transform:scale(1); } 50% { opacity:0.95; transform:scale(1.18); } }
+@keyframes shimmer    { 0% { background-position:-200% 0; } 100% { background-position:200% 0; } }
+@keyframes gradientShift { 0% { background-position:0% 50%; } 50% { background-position:100% 50%; } 100% { background-position:0% 50%; } }
+@keyframes borderPulse{ 0%,100% { border-color:rgba(255,255,255,0.07); } 50% { border-color:rgba(0,234,255,0.34); } }
+@keyframes neonFlicker{ 0%,92%,94%,97%,100% { opacity:1; } 93% { opacity:0.45; } 96% { opacity:0.72; } }
+@keyframes dotBlink   { 0%,100% { box-shadow:0 0 6px var(--accent),0 0 12px var(--accent); opacity:1; } 50% { box-shadow:0 0 18px var(--accent),0 0 34px var(--accent); opacity:0.6; } }
+@keyframes barSweep   { from { width:0; } }
+@keyframes headingGlow{ 0%,100% { filter:drop-shadow(0 0 14px rgba(0,234,255,0.55)) drop-shadow(0 0 34px rgba(168,85,255,0.4)); } 50% { filter:drop-shadow(0 0 22px rgba(0,234,255,0.75)) drop-shadow(0 0 54px rgba(168,85,255,0.55)); } }
+/* Ambient orb motion (huge, slow, blurred light orbs) */
+@keyframes orbA { 0% { transform:translate(0,0) scale(1); } 33% { transform:translate(14vw,10vh) scale(1.18); } 66% { transform:translate(-8vw,16vh) scale(0.9); } 100% { transform:translate(0,0) scale(1); } }
+@keyframes orbB { 0% { transform:translate(0,0) scale(1.1); } 33% { transform:translate(-16vw,-8vh) scale(0.95); } 66% { transform:translate(10vw,-14vh) scale(1.2); } 100% { transform:translate(0,0) scale(1.1); } }
+@keyframes orbC { 0% { transform:translate(0,0) scale(1); } 50% { transform:translate(12vw,-12vh) scale(1.25); } 100% { transform:translate(0,0) scale(1); } }
+
+/* ═══════════════════════ GLOBAL FONT ENFORCEMENT ══════════════════════ */
+html, body, [class*="css"], [class*="st-"],
+[data-testid="stAppViewContainer"] *,
+input, textarea, select, button, code, kbd, pre,
+h1, h2, h3, h4, h5, h6, p, span, div, label, a, td, th, li {
+    font-family: var(--font-mono) !important;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to   { opacity: 1; }
+/* Restore Streamlit internal icons to prevent "arrow_downward" text overlap */
+.stIconMaterial, span.material-icons, [data-testid="stIconMaterial"], span.icon, svg, .st-icon, .streamlit-expanderHeader svg {
+    font-family: "Material Symbols Rounded", "Material Icons", sans-serif !important;
 }
-@keyframes slideInDown {
-    from { opacity: 0; transform: translateY(-16px); }
-    to   { opacity: 1; transform: translateY(0); }
+html, body { background: var(--bg-black) !important; color: var(--text-primary); }
+
+/* ══════════════════════ TRUE-BLACK OLED ANIMATED ORB BACKGROUND ═══════════════════ */
+[data-testid="stAppViewContainer"] {
+    background: radial-gradient(ellipse at 50% 0%, #050505 0%, #000000 70%) !important;
+    position: relative; isolation: isolate; overflow-x: hidden;
 }
-@keyframes pulseGlow {
-    0%, 100% { box-shadow: 0 0 8px rgba(0,229,255,0.15); }
-    50%      { box-shadow: 0 0 20px rgba(0,229,255,0.3); }
+/* Orb layer 1 — deep cyan */
+[data-testid="stAppViewContainer"]::before {
+    content: '';
+    position: fixed; top: -25%; left: -20%;
+    width: 70vw; height: 70vw; z-index: -3;
+    background: radial-gradient(circle, rgba(0,234,255,0.22) 0%, rgba(0,234,255,0.08) 35%, transparent 66%);
+    filter: blur(90px);
+    animation: orbA 26s ease-in-out infinite;
+    pointer-events: none;
 }
-@keyframes shimmer {
-    0%   { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
+/* Orb layer 2 — magenta */
+[data-testid="stAppViewContainer"]::after {
+    content: '';
+    position: fixed; bottom: -30%; right: -20%;
+    width: 66vw; height: 66vw; z-index: -3;
+    background: radial-gradient(circle, rgba(255,47,208,0.18) 0%, rgba(168,85,255,0.09) 38%, transparent 66%);
+    filter: blur(100px);
+    animation: orbB 32s ease-in-out infinite;
+    pointer-events: none;
 }
-@keyframes gradientShift {
-    0%   { background-position: 0% 50%; }
-    50%  { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+/* Orb layer 3 — electric blue (attached to the scroll container) */
+.stApp::before {
+    content: '';
+    position: fixed; top: 30%; left: 45%;
+    width: 52vw; height: 52vw; z-index: -3;
+    background: radial-gradient(circle, rgba(47,107,255,0.16) 0%, rgba(0,229,255,0.06) 40%, transparent 66%);
+    filter: blur(110px);
+    animation: orbC 38s ease-in-out infinite;
+    pointer-events: none;
 }
-@keyframes borderPulse {
-    0%, 100% { border-color: rgba(0,229,255,0.12); }
-    50%      { border-color: rgba(0,229,255,0.28); }
+/* Subtle vignette so edges stay true-black */
+.stApp::after {
+    content: '';
+    position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    background: radial-gradient(ellipse 90% 80% at 50% 40%, transparent 55%, rgba(0,0,0,0.65) 100%);
 }
 
-/* ── Global reset ── */
-html, body, [data-testid="stAppViewContainer"] {
-    background: var(--bg-primary) !important;
-    font-family: 'Inter', 'Outfit', sans-serif;
-    color: var(--text-primary);
+/* ── Strip Streamlit chrome ── */
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"], section[data-testid="stSidebar"] {
+    display:none !important; width:0 !important; min-width:0 !important; max-width:0 !important; visibility:hidden !important;
 }
-
-/* ── Completely hide sidebar ── */
-[data-testid="stSidebar"],
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
-section[data-testid="stSidebar"] {
-    display: none !important;
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    visibility: hidden !important;
+#MainMenu, footer { visibility:hidden !important; display:none !important; }
+header[data-testid="stHeader"] { background:transparent !important; height:0 !important; display:none !important; }
+[data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
+.block-container {
+    padding-top: 1.1rem !important; padding-bottom: 2.6rem !important;
+    max-width: 1320px !important; position: relative; z-index: 1;
 }
+.stMarkdown, .stMarkdown p { line-height: 1.6; letter-spacing: 0.2px; }
 
-/* ── Hide Streamlit chrome ── */
-#MainMenu, footer { visibility: hidden; }
-header[data-testid="stHeader"] { background: transparent !important; height: 0 !important; }
-[data-testid="stToolbar"] { display: none; }
-.block-container { padding-top: 1rem !important; }
-
-/* ── Top Navbar Container ── */
+/* ══════════════════════════════════════ TOP NAVBAR ══════════════════════════════════════ */
 .top-navbar {
-    background: var(--bg-navbar);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    border-radius: 16px;
-    padding: 0.6rem 1.2rem;
-    margin-bottom: 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 1.2rem;
-    animation: slideInDown 0.5s ease-out;
-    box-shadow: 0 4px 30px rgba(0,0,0,0.4);
+    background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border); border-radius: var(--radius);
+    padding: 0.7rem 1.5rem; margin-bottom: 0.4rem;
+    display: flex; align-items: center; gap: 1.2rem; position: relative; overflow: hidden;
+    animation: slideInDown 0.7s cubic-bezier(0.16,1,0.3,1) both;
+    box-shadow: 0 10px 44px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.top-navbar::after {
+    content:''; position:absolute; top:0; left:-60%; width:60%; height:100%;
+    background: linear-gradient(90deg, transparent, rgba(0,234,255,0.12), transparent);
+    animation: shimmer 6s linear infinite;
 }
 .navbar-brand {
-    font-family: 'Space Mono', monospace;
-    font-size: 1.15rem;
-    font-weight: 700;
-    color: var(--accent);
-    text-shadow: 0 0 20px rgba(0,229,255,0.5);
-    white-space: nowrap;
-    letter-spacing: -0.5px;
-    margin-right: 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    font-size: 1.25rem; font-weight: 800; color: var(--accent); letter-spacing: 1.5px;
+    text-shadow: 0 0 24px rgba(0,234,255,0.6); display: flex; align-items: center; gap: 11px;
+    white-space: nowrap; animation: neonFlicker 8s linear infinite;
 }
-.navbar-brand .brand-dot {
-    width: 8px; height: 8px;
-    background: var(--accent);
-    border-radius: 50%;
-    box-shadow: 0 0 8px var(--accent);
-    animation: pulseGlow 2s ease-in-out infinite;
-}
-.navbar-divider {
-    width: 1px;
-    height: 28px;
-    background: rgba(0,229,255,0.15);
-    flex-shrink: 0;
+.navbar-brand .brand-dot { width:10px; height:10px; background:var(--accent); border-radius:50%; animation: dotBlink 1.8s ease-in-out infinite; }
+.navbar-divider { width:1px; height:30px; background:linear-gradient(180deg, transparent, rgba(0,234,255,0.4), transparent); }
+
+.accent-line {
+    height:2px; width:100%; margin:0.2rem 0 1.5rem 0; border-radius:2px;
+    background: linear-gradient(90deg, transparent 0%, var(--accent) 20%, var(--accent-violet) 50%, var(--accent) 80%, transparent 100%);
+    background-size:200% 100%; animation: shimmer 3.5s linear infinite, fadeIn 0.8s ease-out;
+    box-shadow: 0 0 20px rgba(0,234,255,0.45);
 }
 
-/* ── Override Streamlit radio buttons to look like nav tabs ── */
-div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div > div[data-testid="stRadio"] > div {
-    gap: 0 !important;
-}
-div[data-testid="stRadio"] > label { display: none !important; }
+/* Radio → neon nav tabs */
+div[data-testid="stRadio"] > label { display:none !important; }
 div[data-testid="stRadio"] > div[role="radiogroup"] {
-    display: flex !important;
-    gap: 4px !important;
-    flex-wrap: wrap !important;
+    display:flex !important; gap:6px !important; flex-wrap:wrap !important; justify-content:center !important;
+    animation: slideInDown 0.7s cubic-bezier(0.16,1,0.3,1) 0.1s both;
 }
 div[data-testid="stRadio"] > div[role="radiogroup"] label {
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    border-radius: 10px !important;
-    padding: 6px 14px !important;
-    font-family: 'Space Mono', monospace !important;
-    font-size: 0.7rem !important;
-    letter-spacing: 0.5px !important;
-    color: var(--text-muted) !important;
-    cursor: pointer !important;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    white-space: nowrap !important;
-    margin: 0 !important;
+    background: var(--glass-bg-soft) !important; border: 1px solid var(--glass-border) !important; border-radius: 12px !important;
+    padding: 8px 17px !important; font-size: 0.72rem !important; font-weight: 600 !important; letter-spacing: 0.6px !important;
+    color: var(--text-muted) !important; cursor: pointer !important;
+    transition: all 0.28s cubic-bezier(0.34,1.56,0.64,1) !important; white-space: nowrap !important; margin: 0 !important;
+    display: flex !important; align-items: center !important;
 }
 div[data-testid="stRadio"] > div[role="radiogroup"] label:hover {
-    background: rgba(0,229,255,0.06) !important;
-    border-color: rgba(0,229,255,0.15) !important;
-    color: var(--accent) !important;
-    transform: translateY(-1px) !important;
+    background: rgba(0,234,255,0.10) !important; border-color: var(--glass-border-hover) !important;
+    color: var(--accent) !important; transform: translateY(-2px) scale(1.05) !important; box-shadow: 0 6px 22px rgba(0,234,255,0.3) !important;
 }
 div[data-testid="stRadio"] > div[role="radiogroup"] label[data-checked="true"],
 div[data-testid="stRadio"] > div[role="radiogroup"] label:has(input:checked) {
-    background: rgba(0,229,255,0.1) !important;
-    border-color: rgba(0,229,255,0.3) !important;
-    color: var(--accent) !important;
-    box-shadow: 0 0 12px rgba(0,229,255,0.15) !important;
+    background: linear-gradient(135deg, rgba(0,234,255,0.2), rgba(168,85,255,0.16)) !important;
+    border-color: rgba(0,234,255,0.6) !important; color: var(--accent) !important;
+    box-shadow: 0 0 22px rgba(0,234,255,0.34), inset 0 0 12px rgba(0,234,255,0.1) !important;
 }
-div[data-testid="stRadio"] > div[role="radiogroup"] label span[data-testid="stMarkdownContainer"] p {
-    font-family: 'Space Mono', monospace !important;
-    font-size: 0.7rem !important;
-}
-/* Hide radio button circle indicators */
-div[data-testid="stRadio"] > div[role="radiogroup"] label > div:first-child {
-    display: none !important;
-}
+div[data-testid="stRadio"] > div[role="radiogroup"] label span[data-testid="stMarkdownContainer"] p { font-size:0.72rem !important; font-weight:600 !important; margin:0 !important; }
+div[data-testid="stRadio"] > div[role="radiogroup"] label > div:first-child { display:none !important; }
 
-/* ── Animated hero banner ── */
+/* ══════════════════════════════════════ HERO + AMBIENT-LIGHT HEADING ═══════════════════════════ */
 .hero-banner {
-    background: linear-gradient(135deg,
-        rgba(6,11,20,0.9) 0%,
-        rgba(10,22,40,0.8) 40%,
-        rgba(6,15,32,0.9) 100%);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--glass-border);
-    border-radius: 20px;
-    padding: 2.5rem 2.2rem;
-    margin-bottom: 1.5rem;
-    position: relative;
-    overflow: hidden;
-    animation: fadeInUp 0.6s ease-out;
+    background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border); border-radius: 24px;
+    padding: 3.2rem 2.8rem; margin-bottom: 1.5rem; position: relative; overflow: hidden; text-align: center;
+    animation: fadeInUp 0.7s cubic-bezier(0.16,1,0.3,1) both;
+    box-shadow: 0 28px 80px rgba(0,0,0,0.55);
 }
+/* Ambient light pool behind the heading */
 .hero-banner::before {
-    content: '';
-    position: absolute; inset: 0;
-    background: repeating-linear-gradient(
-        0deg, transparent, transparent 40px,
-        rgba(0,229,255,0.015) 40px, rgba(0,229,255,0.015) 41px
-    ),
-    repeating-linear-gradient(
-        90deg, transparent, transparent 40px,
-        rgba(0,229,255,0.015) 40px, rgba(0,229,255,0.015) 41px
-    );
-    pointer-events: none;
-}
-.hero-banner::after {
-    content: '';
-    position: absolute;
-    top: -50%; right: -50%;
-    width: 100%; height: 100%;
-    background: radial-gradient(circle, rgba(0,229,255,0.04) 0%, transparent 60%);
-    pointer-events: none;
-}
-.hero-title {
-    font-family: 'Space Mono', monospace;
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: -0.5px;
-    margin: 0;
-    text-shadow: 0 0 30px rgba(0,229,255,0.35);
-}
-.hero-sub {
-    font-size: 0.9rem;
-    color: var(--text-muted);
-    margin-top: 0.4rem;
-    font-weight: 300;
-    letter-spacing: 0.3px;
-    line-height: 1.5;
+    content:''; position:absolute; top:8%; left:50%; transform:translateX(-50%);
+    width: 70%; height: 70%;
+    background: radial-gradient(ellipse at center, rgba(0,234,255,0.18) 0%, rgba(168,85,255,0.12) 40%, transparent 70%);
+    filter: blur(50px); animation: ambientPulse 6s ease-in-out infinite; pointer-events:none; z-index:0;
 }
 .hero-badge {
-    display: inline-block;
-    background: rgba(0,229,255,0.08);
-    border: 1px solid rgba(0,229,255,0.25);
-    color: var(--accent);
-    padding: 3px 12px;
-    border-radius: 20px;
-    font-size: 0.68rem;
-    font-family: 'Space Mono', monospace;
-    margin-right: 6px;
-    letter-spacing: 1px;
-    transition: all 0.3s ease;
+    display:inline-block; font-size:0.62rem; font-weight:700; letter-spacing:2px;
+    color:var(--accent); background:rgba(0,234,255,0.08); border:1px solid rgba(0,234,255,0.3);
+    border-radius:6px; padding:4px 11px; margin:0 4px; position:relative; z-index:1; animation: fadeIn 1s ease-out both;
 }
-.hero-badge:hover {
-    background: rgba(0,229,255,0.15);
-    box-shadow: 0 0 12px rgba(0,229,255,0.2);
-    transform: translateY(-1px);
+.hero-title {
+    font-size: 3.2rem; font-weight: 800; letter-spacing: -1px; line-height: 1.06;
+    margin: 1rem auto 0 auto; position: relative; z-index: 1; max-width: 16ch;
+    background: linear-gradient(96deg, #00e5ff 0%, #35c4ff 30%, #a855ff 68%, #7b2fff 100%);
+    background-size: 220% auto; -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    /* Multi-layered ambient glow radiating from behind the letters (drop-shadow works with clipped text) */
+    filter:
+        drop-shadow(0 0 6px rgba(0,234,255,0.6))
+        drop-shadow(0 0 18px rgba(0,234,255,0.45))
+        drop-shadow(0 0 40px rgba(168,85,255,0.4))
+        drop-shadow(0 0 70px rgba(123,47,255,0.28));
+    animation: gradientShift 7s ease infinite, headingGlow 5s ease-in-out infinite;
+}
+.hero-sub {
+    font-size: 0.95rem; color: var(--text-muted); margin: 1rem auto 0 auto;
+    letter-spacing: 1.2px; position: relative; z-index: 1; font-weight: 400; max-width: 60ch;
 }
 
-/* ── Page title (used on sub-pages) ── */
+/* ══════════════════════════════════════ PAGE TITLE ══════════════════════════════════════ */
 .page-title {
-    font-family: 'Space Mono', monospace;
-    font-size: 1.6rem;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: -0.5px;
-    margin-bottom: 1.5rem;
-    text-shadow: 0 0 20px rgba(0,229,255,0.3);
-    animation: fadeInUp 0.5s ease-out;
+    font-size: 2rem; font-weight: 800; letter-spacing: -0.5px; color: var(--text-primary);
+    margin: 0.3rem 0 1.5rem 0; padding-left: 16px; position: relative; display: flex; align-items: center; gap: 4px;
+    animation: slideInLeft 0.6s cubic-bezier(0.16,1,0.3,1) both; text-shadow: 0 0 30px rgba(0,234,255,0.22);
+}
+.page-title::before {
+    content:''; position:absolute; left:0; top:12%; bottom:12%; width:5px; border-radius:5px;
+    background: linear-gradient(180deg, var(--accent), var(--accent-violet)); box-shadow: 0 0 16px rgba(0,234,255,0.6);
 }
 
-/* ── Metric cards — Glassmorphism ── */
-.metric-row {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap;
+/* ══════════════════════════════════════ STATUS BAR ═════════════����════════════════════════ */
+.status-bar {
+    display:flex; flex-wrap:wrap; gap:1.6rem; align-items:center;
+    background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border); border-radius: 14px; padding: 0.9rem 1.5rem; margin-bottom: 1.5rem;
     animation: fadeInUp 0.6s ease-out 0.1s both;
 }
+.status-item { display:flex; align-items:center; gap:8px; font-size:0.78rem; color:var(--text-muted); }
+.status-value { font-weight:700; }
+
+/* ══════════════════════════ METRIC CARDS — staggered load, pixel-aligned ═══════════════════ */
+.metric-row { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-bottom:1.6rem; align-items:stretch; }
 .metric-card {
-    flex: 1;
-    min-width: 140px;
-    background: var(--bg-card);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    border-radius: 14px;
-    padding: 1.2rem 1.3rem;
-    position: relative;
-    overflow: hidden;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border); border-radius: var(--radius); padding: 1.5rem 1.6rem;
+    position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; min-height: 120px;
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease, border-color 0.3s ease;
+    opacity: 0; animation: fadeInUp 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
 }
+.metric-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, var(--accent), var(--accent-violet)); opacity:0.8; }
+.metric-row .metric-card:nth-child(1) { animation-delay: 0.10s; }
+.metric-row .metric-card:nth-child(2) { animation-delay: 0.22s; }
+.metric-row .metric-card:nth-child(3) { animation-delay: 0.34s; }
+.metric-row .metric-card:nth-child(4) { animation-delay: 0.46s; }
 .metric-card:hover {
-    transform: translateY(-3px);
-    border-color: rgba(0,229,255,0.2);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 16px rgba(0,229,255,0.08);
+    transform: translateY(-6px) scale(1.05); border-color: var(--glass-border-hover);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.6), 0 0 28px rgba(0,234,255,0.26);
 }
-.metric-card::after {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    opacity: 0.8;
-}
-.metric-label {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    font-family: 'Space Mono', monospace;
-}
-.metric-value {
-    font-size: 1.9rem;
-    font-weight: 700;
-    color: var(--accent);
-    font-family: 'Space Mono', monospace;
-    line-height: 1.2;
-    margin-top: 4px;
-}
+.metric-label { font-size:0.66rem; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:var(--text-muted); }
+.metric-value { font-size:2.7rem; font-weight:800; color:var(--accent); margin-top:0.5rem; text-shadow:0 0 28px rgba(0,234,255,0.42); line-height:1; font-variant-numeric:tabular-nums; letter-spacing:1px; }
 
-/* ── Section card — Glassmorphism ── */
+/* ══════════════════════════════════════ SECTION CARDS ═══════════════════════════════════ */
 .section-card {
-    background: var(--bg-card);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1.2rem;
-    animation: fadeInUp 0.5s ease-out both;
-    transition: all 0.3s ease;
+    background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border); border-radius: 18px; padding: 1.6rem 1.7rem; margin-bottom: 1.4rem;
+    position: relative; overflow: hidden; animation: fadeInUp 0.6s cubic-bezier(0.16,1,0.3,1) both;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
-.section-card:hover {
-    border-color: rgba(0,229,255,0.15);
-    box-shadow: 0 4px 24px rgba(0,0,0,0.2);
-}
-.section-title {
-    font-family: 'Space Mono', monospace;
-    font-size: 0.82rem;
-    color: var(--accent);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    margin-bottom: 1rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
+.section-card:hover { border-color: var(--glass-border-hover); box-shadow: 0 14px 46px rgba(0,0,0,0.5), 0 0 24px rgba(0,234,255,0.14); }
+.section-title { font-size:0.98rem; font-weight:700; letter-spacing:0.8px; color:var(--accent); margin-bottom:1.1rem; text-shadow:0 0 14px rgba(0,234,255,0.3); display:flex; align-items:center; gap:8px; }
 
-/* ── System status bar (dashboard) ── */
-.status-bar {
-    display: flex;
-    gap: 1.5rem;
-    align-items: center;
-    flex-wrap: wrap;
-    padding: 0.8rem 1.2rem;
-    background: var(--bg-card);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
-    margin-bottom: 1.5rem;
-    animation: fadeIn 0.6s ease-out 0.2s both;
-}
-.status-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.78rem;
-    color: var(--text-muted);
-    font-family: 'Space Mono', monospace;
-}
-.status-value {
-    font-weight: 600;
-    letter-spacing: 0.5px;
-}
+.feature-item { display:flex; align-items:flex-start; gap:14px; padding:12px 13px; border-radius:12px; margin-bottom:6px; border:1px solid transparent; transition: all 0.26s cubic-bezier(0.34,1.56,0.64,1); }
+.feature-item:hover { background:rgba(0,234,255,0.05); border-color:rgba(0,234,255,0.24); transform:translateX(6px); }
+.step-item { display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.05); transition: all 0.24s ease; }
+.step-item:hover { transform:translateX(5px); }
+.step-num { font-size:0.8rem; font-weight:800; color:#000; background:linear-gradient(135deg, var(--accent), var(--accent-violet)); min-width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:9px; box-shadow:0 0 16px rgba(0,234,255,0.35); flex-shrink:0; }
+.step-text { font-size:0.84rem; color:var(--text-primary); letter-spacing:0.2px; }
 
-/* ── Risk badge ── */
-.risk-low    { color: var(--success); background: rgba(0,230,118,0.08);  border: 1px solid rgba(0,230,118,0.25);  }
-.risk-medium { color: var(--warning); background: rgba(255,171,0,0.08);  border: 1px solid rgba(255,171,0,0.25);  }
-.risk-high   { color: var(--danger);  background: rgba(255,23,68,0.08);   border: 1px solid rgba(255,23,68,0.25);  }
-.risk-badge {
-    display: inline-block;
-    padding: 4px 16px;
-    border-radius: 20px;
-    font-family: 'Space Mono', monospace;
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 1px;
-    transition: all 0.3s ease;
-}
-.risk-badge:hover {
-    transform: scale(1.05);
-}
+/* ══════════════════════════ RISK BADGES + SCORE BAR ═════════════════════════ */
+.risk-badge { display:inline-block; font-size:0.72rem; font-weight:800; letter-spacing:2px; padding:5px 17px; border-radius:8px; text-transform:uppercase; }
+.risk-low    { color:var(--success); background:rgba(0,255,163,0.10); border:1px solid rgba(0,255,163,0.42); box-shadow:0 0 16px rgba(0,255,163,0.2); animation: pulseGlow 3s ease-in-out infinite; }
+.risk-medium { color:var(--warning); background:rgba(255,196,0,0.10); border:1px solid rgba(255,196,0,0.42); box-shadow:0 0 16px rgba(255,196,0,0.22); animation: pulseGlow 2.2s ease-in-out infinite; }
+.risk-high   { color:var(--danger); background:rgba(255,45,107,0.12); border:1px solid rgba(255,45,107,0.5); box-shadow:0 0 22px rgba(255,45,107,0.32); animation: pulseGlow 1.3s ease-in-out infinite; }
+.score-bar-wrap { width:100%; height:13px; background:rgba(0,0,0,0.5); border:1px solid rgba(0,234,255,0.14); border-radius:8px; overflow:hidden; position:relative; }
+.score-bar-fill { height:100%; border-radius:8px; position:relative; box-shadow:0 0 18px rgba(0,234,255,0.5); animation: barSweep 1.1s cubic-bezier(0.16,1,0.3,1) both; }
+.score-bar-fill::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent); background-size:200% 100%; animation: shimmer 2s linear infinite; }
 
-/* ── Progress bar ── */
-.score-bar-wrap {
-    background: rgba(255,255,255,0.04);
-    border-radius: 6px;
-    height: 8px;
-    margin: 8px 0;
-    overflow: hidden;
-}
-.score-bar-fill {
-    height: 100%;
-    border-radius: 6px;
-    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* ══════════════════════════════════════ CHAT BUBBLES ══════════════════════════════════ */
+.chat-label { font-size:0.62rem; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); margin-bottom:4px; }
+.chat-user, .chat-ai { border-radius:14px; padding:13px 17px; margin-bottom:12px; font-size:0.86rem; line-height:1.6; animation: fadeInUp 0.4s ease-out both; max-width:90%; letter-spacing:0.2px; }
+.chat-user { background:linear-gradient(135deg, rgba(0,234,255,0.13), rgba(0,184,212,0.06)); border:1px solid rgba(0,234,255,0.3); color:var(--text-primary); margin-left:auto; }
+.chat-ai { background:linear-gradient(135deg, rgba(168,85,255,0.13), rgba(123,47,255,0.05)); border:1px solid rgba(168,85,255,0.3); color:var(--text-primary); }
+.empty-state { text-align:center; padding:3rem 1.5rem; color:var(--text-muted); font-size:0.9rem; letter-spacing:0.5px; border:1px dashed rgba(0,234,255,0.18); border-radius:16px; animation: fadeIn 0.6s ease-out, borderPulse 3s ease-in-out infinite; }
 
-/* ── Chat bubbles ── */
-.chat-user {
-    background: rgba(123,47,255,0.1);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(123,47,255,0.2);
-    border-radius: 14px 14px 4px 14px;
-    padding: 0.8rem 1.1rem;
-    margin: 0.5rem 0;
-    text-align: right;
-    font-size: 0.9rem;
-    animation: fadeInUp 0.3s ease-out;
+/* ══════════════════════════════════════ BUTTONS ═══════════════════════════════════════ */
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+    font-weight:700 !important; font-size:0.82rem !important; letter-spacing:0.6px !important;
+    color:var(--accent) !important; background:rgba(0,234,255,0.07) !important;
+    border:1px solid rgba(0,234,255,0.32) !important; border-radius:12px !important; padding:0.58rem 1.3rem !important; width:100%;
+    transition: all 0.28s cubic-bezier(0.34,1.56,0.64,1) !important;
 }
-.chat-ai {
-    background: var(--bg-card2);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--glass-border);
-    border-radius: 14px 14px 14px 4px;
-    padding: 0.8rem 1.1rem;
-    margin: 0.5rem 0;
-    font-size: 0.9rem;
-    color: var(--text-primary);
-    animation: fadeInUp 0.3s ease-out;
+.stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {
+    color:#000 !important; background:linear-gradient(135deg, var(--accent), var(--accent-violet)) !important;
+    border-color:var(--accent) !important; transform:translateY(-2px) scale(1.05) !important;
+    box-shadow:0 10px 32px rgba(0,234,255,0.45), 0 0 24px rgba(168,85,255,0.34) !important;
 }
-.chat-label {
-    font-size: 0.68rem;
-    font-family: 'Space Mono', monospace;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 4px;
-}
+.stButton > button:active, .stDownloadButton > button:active { transform:translateY(0) scale(0.99) !important; }
 
-/* ── Feature card (dashboard) ── */
-.feature-item {
-    display: flex;
-    gap: 14px;
-    align-items: flex-start;
-    padding: 12px 0;
-    border-bottom: 1px solid rgba(0,229,255,0.04);
-    transition: all 0.2s ease;
+/* ═══════════════════════════════════════════════════════════════════════════
+   FILE UPLOADER — DEEP DOM HACK (font-size:0 hide + single ::after label)
+   ZERO ghosting / overlap / duplicate text.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* Dropzone = glass panel, centered column */
+[data-testid="stFileUploader"] section,
+[data-testid="stFileUploaderDropzone"] {
+    background: var(--glass-bg) !important; border: 1.5px dashed rgba(0,234,255,0.32) !important;
+    border-radius: 16px !important; padding: 1.6rem 1.5rem !important;
+    display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important;
+    gap: 0.9rem !important; text-align: center !important;
+    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1) !important;
+    backdrop-filter: blur(var(--glass-blur)) !important; -webkit-backdrop-filter: blur(var(--glass-blur)) !important;
 }
-.feature-item:hover {
-    padding-left: 8px;
-    background: rgba(0,229,255,0.02);
-    border-radius: 8px;
+[data-testid="stFileUploader"] section:hover,
+[data-testid="stFileUploaderDropzone"]:hover {
+    border-color: var(--accent) !important; background: rgba(0,234,255,0.06) !important;
+    transform: scale(1.01) !important; box-shadow: 0 0 32px rgba(0,234,255,0.26) !important;
 }
-.feature-item:last-child { border-bottom: none; }
-
-/* ── Streamlit overrides ── */
-.stButton > button {
-    background: rgba(0,229,255,0.06) !important;
-    backdrop-filter: blur(8px) !important;
-    border: 1px solid rgba(0,229,255,0.2) !important;
-    color: var(--accent) !important;
-    font-family: 'Space Mono', monospace !important;
-    font-size: 0.78rem !important;
-    letter-spacing: 0.5px !important;
-    border-radius: 10px !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    padding: 0.5rem 1.2rem !important;
+/* Hide ALL native nested span text (kills the double/ghost "Drag and drop" text) */
+[data-testid="stFileUploaderDropzoneInstructions"],
+[data-testid="stFileUploaderDropzoneInstructions"] * {
+    font-size: 0 !important;
+    color: transparent !important;
+    text-shadow: none !important;
+    -webkit-text-fill-color: transparent !important;
+    letter-spacing: 0 !important;
+    line-height: 0 !important;
 }
-.stButton > button:hover {
-    background: rgba(0,229,255,0.14) !important;
-    box-shadow: 0 0 24px rgba(0,229,255,0.15), 0 4px 16px rgba(0,0,0,0.2) !important;
-    transform: translateY(-2px) !important;
-    border-color: rgba(0,229,255,0.4) !important;
+/* Neutralize any icon/margins so the injected label sits perfectly centered */
+[data-testid="stFileUploaderDropzoneInstructions"] {
+    display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important;
+    width: 100% !important; margin: 0 !important; padding: 0 !important; gap: 0 !important;
 }
-.stButton > button:active {
-    transform: translateY(0) !important;
-}
-.stTabs [data-baseweb="tab-list"] {
-    background: var(--bg-card) !important;
-    backdrop-filter: blur(12px) !important;
-    border-radius: 12px !important;
-    padding: 4px !important;
-    gap: 2px !important;
-    border: 1px solid var(--glass-border) !important;
-}
-.stTabs [data-baseweb="tab"] {
-    font-family: 'Space Mono', monospace !important;
-    font-size: 0.72rem !important;
+[data-testid="stFileUploaderDropzoneInstructions"] svg { display: none !important; }
+/* Inject a single crisp label */
+[data-testid="stFileUploaderDropzoneInstructions"]::after {
+    content: 'Upload File';
+    display: block !important;
+    font-family: var(--font-mono) !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
     letter-spacing: 1px !important;
-    color: var(--text-muted) !important;
-    border-radius: 8px !important;
-    transition: all 0.25s ease !important;
+    line-height: 1.2 !important;
+    color: #00e5ff !important;
+    -webkit-text-fill-color: #00e5ff !important;
+    text-shadow: 0 0 18px rgba(0,229,255,0.5) !important;
+    text-align: center !important;
 }
-.stTabs [aria-selected="true"] {
-    background: rgba(0,229,255,0.1) !important;
-    color: var(--accent) !important;
+/* Secondary hint under the label */
+[data-testid="stFileUploaderDropzoneInstructions"]::before {
+    content: 'Drag & drop · or browse';
+    display: block !important; order: 2;
+    font-family: var(--font-mono) !important; font-size: 0.68rem !important; font-weight: 400 !important;
+    letter-spacing: 0.6px !important; line-height: 1.4 !important; margin-top: 6px !important;
+    color: var(--text-muted) !important; -webkit-text-fill-color: var(--text-muted) !important; text-align: center !important;
 }
-[data-testid="stFileUploader"] {
-    background: var(--bg-card2) !important;
-    backdrop-filter: blur(8px) !important;
-    border: 1px dashed rgba(0,229,255,0.15) !important;
-    border-radius: 12px !important;
-    transition: all 0.3s ease !important;
+/* Browse button: hide native label, inject single clean word */
+[data-testid="stFileUploader"] button {
+    position: relative !important; font-size: 0 !important; color: transparent !important;
+    background: rgba(0,234,255,0.08) !important; border: 1px solid rgba(0,234,255,0.34) !important;
+    border-radius: 10px !important; padding: 0.5rem 1.4rem !important; min-height: 38px;
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+    transition: all 0.26s cubic-bezier(0.34,1.56,0.64,1) !important; width: auto !important;
 }
-[data-testid="stFileUploader"]:hover {
-    border-color: rgba(0,229,255,0.3) !important;
-    box-shadow: 0 0 16px rgba(0,229,255,0.05) !important;
+[data-testid="stFileUploader"] button * { font-size: 0 !important; color: transparent !important; -webkit-text-fill-color: transparent !important; }
+[data-testid="stFileUploader"] button::after {
+    content: 'Browse'; font-family: var(--font-mono) !important; font-size: 0.8rem !important; font-weight: 700 !important;
+    letter-spacing: 0.5px !important; color: var(--accent) !important; -webkit-text-fill-color: var(--accent) !important;
 }
-.stTextInput > div > div > input,
-.stTextArea > div > div > textarea {
-    background: rgba(17,29,46,0.6) !important;
-    backdrop-filter: blur(8px) !important;
-    border: 1px solid var(--glass-border) !important;
-    color: var(--text-primary) !important;
-    font-family: 'Inter', 'Outfit', sans-serif !important;
-    border-radius: 10px !important;
-    transition: all 0.3s ease !important;
-}
-.stTextInput > div > div > input:focus,
-.stTextArea > div > div > textarea:focus {
-    border-color: rgba(0,229,255,0.3) !important;
-    box-shadow: 0 0 12px rgba(0,229,255,0.1) !important;
-}
-.stDataFrame {
-    border: 1px solid var(--glass-border) !important;
-    border-radius: 12px !important;
-    overflow: hidden !important;
-}
-div[data-testid="stExpander"] {
-    background: var(--bg-card) !important;
-    backdrop-filter: blur(12px) !important;
-    border: 1px solid var(--glass-border) !important;
-    border-radius: 12px !important;
-    transition: all 0.3s ease !important;
-}
-div[data-testid="stExpander"]:hover {
-    border-color: rgba(0,229,255,0.15) !important;
-}
-.stAlert {
-    border-radius: 12px !important;
-    font-family: 'Inter', 'Outfit', sans-serif !important;
-    backdrop-filter: blur(8px) !important;
-}
-.stSelectbox > div > div {
-    background: rgba(17,29,46,0.6) !important;
-    border: 1px solid var(--glass-border) !important;
-    border-radius: 10px !important;
-}
-.stSlider > div > div > div {
-    background: rgba(0,229,255,0.2) !important;
-}
+[data-testid="stFileUploader"] button:hover { background: linear-gradient(135deg, var(--accent), var(--accent-violet)) !important; border-color: var(--accent) !important; transform: scale(1.05) !important; box-shadow: 0 0 22px rgba(0,234,255,0.45) !important; }
+[data-testid="stFileUploader"] button:hover::after { color: #000 !important; -webkit-text-fill-color: #000 !important; }
+/* Uploaded-file chip stays readable */
+[data-testid="stFileUploaderFile"], [data-testid="stFileUploaderFile"] * { font-size: 0.78rem !important; color: var(--text-primary) !important; -webkit-text-fill-color: var(--text-primary) !important; font-family: var(--font-mono) !important; }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: var(--bg-primary); }
-::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.2); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0,229,255,0.35); }
+/* Camera input */
+[data-testid="stCameraInput"] button { font-weight:700 !important; color:var(--accent) !important; background:rgba(0,234,255,0.08) !important; border:1px solid rgba(0,234,255,0.3) !important; border-radius:12px !important; transition: all 0.26s cubic-bezier(0.34,1.56,0.64,1) !important; }
+[data-testid="stCameraInput"] button:hover { transform:scale(1.05) !important; box-shadow:0 0 20px rgba(0,234,255,0.35) !important; }
 
-/* ── Animated gradient accent line ── */
-.accent-line {
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
-    background-size: 200% 100%;
-    animation: shimmer 3s linear infinite;
-    border-radius: 2px;
-    margin: 0.5rem 0 1.5rem;
-    opacity: 0.5;
+/* ══════════════════════════════════════ INPUTS + SELECT ══════════════════════════════════ */
+.stTextInput input, .stTextArea textarea, .stNumberInput input,
+.stSelectbox div[data-baseweb="select"] > div, [data-baseweb="select"] {
+    background: var(--glass-bg) !important; color: var(--text-primary) !important; border-radius: 11px !important;
+    border: 1px solid rgba(0,234,255,0.18) !important; transition: all 0.26s ease !important;
 }
+.stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 2px rgba(0,234,255,0.18), 0 0 18px rgba(0,234,255,0.2) !important; }
+.stSelectbox div[data-baseweb="select"] > div:hover { border-color: var(--accent) !important; }
+label, .stSelectbox label, .stFileUploader > label, .stTextInput label, .stSelectbox > label { color: var(--text-muted) !important; font-weight: 600 !important; font-size: 0.8rem !important; letter-spacing: 0.5px !important; }
 
-/* ── Step item (quick start) ── */
-.step-item {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    margin-bottom: 14px;
-    transition: all 0.2s ease;
-}
-.step-item:hover {
-    transform: translateX(4px);
-}
-.step-num {
-    font-family: 'Space Mono', monospace;
-    font-size: 0.68rem;
-    color: var(--accent);
-    background: rgba(0,229,255,0.06);
-    border: 1px solid rgba(0,229,255,0.18);
-    border-radius: 6px;
-    padding: 2px 8px;
-    white-space: nowrap;
-    min-width: 34px;
-    text-align: center;
-}
-.step-text {
-    font-size: 0.85rem;
-    color: #a8c4e0;
-    padding-top: 1px;
-    line-height: 1.4;
-}
+/* ════════════════════════════ TABS ═══════════════════════════════════════ */
+.stTabs [data-baseweb="tab-list"] { gap:6px !important; background:transparent !important; border-bottom:1px solid rgba(0,234,255,0.1) !important; }
+.stTabs [data-baseweb="tab"] { font-weight:600 !important; font-size:0.8rem !important; color:var(--text-muted) !important; background:var(--glass-bg-soft) !important; border:1px solid var(--glass-border) !important; border-radius:10px 10px 0 0 !important; padding:9px 19px !important; transition: all 0.26s ease !important; }
+.stTabs [data-baseweb="tab"]:hover { color:var(--accent) !important; background:rgba(0,234,255,0.06) !important; transform:translateY(-2px) !important; }
+.stTabs [aria-selected="true"] { color:var(--accent) !important; background:linear-gradient(135deg, rgba(0,234,255,0.16), rgba(168,85,255,0.1)) !important; border-color:rgba(0,234,255,0.4) !important; box-shadow:0 0 16px rgba(0,234,255,0.2) !important; }
+.stTabs [data-baseweb="tab-highlight"] { background:var(--accent) !important; }
 
-/* ── Stagger fade-in for child elements ── */
-.stagger-1 { animation: fadeInUp 0.5s ease-out 0.05s both; }
-.stagger-2 { animation: fadeInUp 0.5s ease-out 0.1s both; }
-.stagger-3 { animation: fadeInUp 0.5s ease-out 0.15s both; }
-.stagger-4 { animation: fadeInUp 0.5s ease-out 0.2s both; }
-.stagger-5 { animation: fadeInUp 0.5s ease-out 0.25s both; }
+/* ════════════════════════════ IMAGES ═══���������═══════════════════════════ */
+[data-testid="stImage"] img { border-radius:14px !important; border:1px solid rgba(0,234,255,0.16) !important; transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1) !important; }
+[data-testid="stImage"] img:hover { border-color:rgba(0,234,255,0.4) !important; box-shadow:0 0 28px rgba(0,234,255,0.22) !important; transform:scale(1.01) !important; }
+[data-testid="stImage"] figcaption, [data-testid="caption"] { font-family:var(--font-mono) !important; color:var(--text-muted) !important; text-align:center !important; }
 
-/* ── Empty state ── */
-.empty-state {
-    text-align: center;
-    padding: 4rem 2rem;
-    color: #3a5270;
-    font-family: 'Space Mono', monospace;
-    font-size: 0.85rem;
-    animation: fadeIn 0.6s ease-out;
+/* ═══════════════════════════ TABLES / DATAFRAMES — pixel-aligned ═══════════════════════ */
+[data-testid="stTable"] table, .stDataFrame, [data-testid="stDataFrame"] { font-family:var(--font-mono) !important; background:var(--glass-bg) !important; border-radius:12px !important; overflow:hidden !important; border:1px solid var(--glass-border) !important; }
+[data-testid="stTable"] th, [data-testid="stTable"] td { font-family:var(--font-mono) !important; border-color:rgba(255,255,255,0.06) !important; padding:10px 14px !important; font-variant-numeric:tabular-nums !important; }
+[data-testid="stTable"] th { color:var(--accent) !important; background:rgba(0,234,255,0.06) !important; text-transform:uppercase !important; letter-spacing:1px !important; font-size:0.72rem !important; text-align:left !important; }
+[data-testid="stTable"] td { color:var(--text-primary) !important; font-size:0.82rem !important; }
+[data-testid="stTable"] td:not(:first-child), [data-testid="stTable"] th:not(:first-child) { text-align:right !important; }
+
+/* Alerts / spinner / progress / native metric */
+[data-testid="stAlert"] { font-family:var(--font-mono) !important; border-radius:12px !important; backdrop-filter:blur(10px) !important; }
+.stSpinner > div { border-top-color:var(--accent) !important; }
+[data-testid="stSpinner"] p { font-family:var(--font-mono) !important; color:var(--accent) !important; }
+.stProgress > div > div > div { background:linear-gradient(90deg, var(--accent), var(--accent-violet)) !important; }
+[data-testid="stMetricValue"], [data-testid="stMetricLabel"] { font-family:var(--font-mono) !important; font-variant-numeric:tabular-nums !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-track { background:#000; }
+::-webkit-scrollbar-thumb { background:linear-gradient(180deg, var(--accent), var(--accent-violet)); border-radius:6px; }
+::-webkit-scrollbar-thumb:hover { background:var(--accent); }
+code, pre { font-family:var(--font-mono) !important; }
+
+/* Stagger utilities */
+.stagger-1 { animation: fadeInUp 0.55s cubic-bezier(0.16,1,0.3,1) 0.05s both; }
+.stagger-2 { animation: fadeInUp 0.55s cubic-bezier(0.16,1,0.3,1) 0.15s both; }
+.stagger-3 { animation: fadeInUp 0.55s cubic-bezier(0.16,1,0.3,1) 0.25s both; }
+.stagger-4 { animation: fadeInUp 0.55s cubic-bezier(0.16,1,0.3,1) 0.35s both; }
+.stagger-5 { animation: fadeInUp 0.55s cubic-bezier(0.16,1,0.3,1) 0.45s both; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important; } }
+@media (max-width: 820px) {
+    .metric-row { grid-template-columns:repeat(2,1fr); }
+    .hero-title { font-size:2.1rem; }
+    .page-title { font-size:1.5rem; }
 }
 </style>
 """,
@@ -650,21 +496,15 @@ if "chat_messages" not in st.session_state:
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 if "total_scans" not in st.session_state:
-    history = load_history()
-    st.session_state.total_scans = len(history)
-
+    st.session_state.total_scans = len(load_history())
 
 def cached_load_history() -> list:
-    """Load history once per Streamlit run and cache in session_state."""
-    if "_history_cache" not in st.session_state:
-        st.session_state._history_cache = load_history()
-    return st.session_state._history_cache
-
+    """Load history from session_state."""
+    return load_history()
 
 def invalidate_history_cache():
-    """Force history to re-read from disk on next access."""
-    if "_history_cache" in st.session_state:
-        del st.session_state["_history_cache"]
+    """No-op for ephemeral history."""
+    pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -751,10 +591,10 @@ if page == "🏠 Dashboard":
         <div>
             <span class='hero-badge'>AI-POWERED</span>
             <span class='hero-badge'>REAL-TIME</span>
-            <span class='hero-badge'>GEMINI VISION</span>
+            <span class='hero-badge'>GROQ AI</span>
         </div>
         <div class='hero-title' style='margin-top:0.8rem'>
-            Anomaly Detection System
+            Anomaly Detection and Correction
         </div>
         <div class='hero-sub'>
             Computer vision · Geo change detection · LLM-powered explanations · Risk scoring
@@ -771,13 +611,13 @@ if page == "🏠 Dashboard":
     mediumrisk = sum(1 for h in history_data if h.get("risk_level") == "MEDIUM")
     lowrisk = sum(1 for h in history_data if h.get("risk_level") == "LOW")
 
-    gemini_health = check_gemini_status()
-    if gemini_health["online"]:
-        gemini_dot = "<span style='color:#00e676'>●</span>"
-        gemini_text = "<span class='status-value' style='color:#00e676'>ONLINE</span>"
+    groq_health = check_groq_status()
+    if groq_health["online"]:
+        groq_dot = "<span style='color:#00e676'>●</span>"
+        groq_text = "<span class='status-value' style='color:#00e676'>ONLINE</span>"
     else:
-        gemini_dot = "<span style='color:#ff1744'>●</span>"
-        gemini_text = "<span class='status-value' style='color:#ff1744'>OFFLINE</span>"
+        groq_dot = "<span style='color:#ff1744'>●</span>"
+        groq_text = "<span class='status-value' style='color:#ff1744'>OFFLINE</span>"
 
     st.markdown(
         f"""
@@ -803,9 +643,9 @@ if page == "🏠 Dashboard":
             <span class='status-value' style='color:#00e676'>{lowrisk}</span>
         </div>
         <div class='status-item'>
-            {gemini_dot}
-            <span>Gemini:</span>
-            {gemini_text}
+            {groq_dot}
+            <span>Groq:</span>
+            {groq_text}
         </div>
     </div>
     """,
@@ -852,7 +692,7 @@ if page == "🏠 Dashboard":
             ("🛠️", "Structural Defect Detection", "Local AI for Scratches, Cracks, Dents, etc."),
             ("🎬", "Video Frame Analysis", "1 FPS extraction with timestamps"),
             ("🌍", "Geo Change Detection", "SSIM + absdiff region classification"),
-            ("🤖", "Gemini Vision Support", "Cloud-based Gemini model for structural analysis"),
+            ("🤖", "Groq Vision AI", "Ultra-fast Groq inference for structural analysis"),
             ("📊", "Risk Score System", "0–100 scoring with LOW/MED/HIGH"),
             ("📋", "Detection History", "Persistent JSON log with replay"),
         ]
@@ -883,7 +723,7 @@ if page == "🏠 Dashboard":
             ("01", "Select any module from the top navigation bar"),
             ("02", "Upload image/video or start camera"),
             ("03", "View detection results & risk score"),
-            ("04", "Get AI explanation from Gemini"),
+            ("04", "Get AI explanation from Groq"),
             ("05", "Download report or check history"),
         ]
         for num, text in steps:
@@ -903,10 +743,10 @@ if page == "🏠 Dashboard":
                     backdrop-filter:blur(8px); border:1px solid rgba(123,47,255,0.18);
                     border-radius:10px'>
             <div style='font-size:0.72rem; font-family:Space Mono,monospace;
-                        color:#7b2fff; letter-spacing:1px; margin-bottom:6px'>GEMINI SETUP</div>
+                        color:#7b2fff; letter-spacing:1px; margin-bottom:6px'>GROQ SETUP</div>
             <code style='font-size:0.72rem; color:#a8c4e0; display:block; line-height:1.8'>
-            $ gemini pull mistral<br/>
-            $ gemini serve
+            $ pip install groq<br/>
+            $ export GROQ_API_KEY=your_key
             </code>
         </div>
         """,
@@ -944,7 +784,7 @@ if page == "🏠 Dashboard":
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE: IMAGE DETECTION
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────��────────────────────────────────
 elif page == "🖼️ Image":
     st.markdown(
         "<div class='page-title'>🖼️ Image Anomaly Detection</div>",
@@ -989,7 +829,7 @@ elif page == "🖼️ Image":
                 ai_result = analyze_image_structural(cv_img, detect_mode)
                 
                 if "error" in ai_result or not ai_result.get("bboxes"):
-                    # Fallback to OpenCV if Gemini is not running OR failed to provide boxes
+                    # Fallback to OpenCV if Groq is not running OR failed to provide boxes
                     cv_result = detect_image_anomaly(cv_img)
                     if "error" in ai_result:
                         score, _ = compute_risk_score(cv_result)
@@ -1033,7 +873,7 @@ elif page == "🖼️ Image":
                             "detected": len(bboxes) > 0,
                             "risk_score": score,
                             "description": f"🔌 [Offline Fallback] OpenCV detected structural irregularities matching {detect_mode}.",
-                            "recommendation": "Manual review required. Start Gemini for AI analysis.",
+                            "recommendation": "Manual review required. Start Groq for AI analysis.",
                             "bboxes": bboxes
                         }
                     else:
@@ -1126,14 +966,14 @@ elif page == "🖼️ Image":
             )
 
         # AI Explanation
-        with st.expander("🤖 Generate AI Explanation (Gemini)", expanded=False):
+        with st.expander("🤖 Generate AI Explanation (Groq)", expanded=False):
             if st.button("✨ Get AI Explanation", key="img_explain"):
-                with st.spinner("Connecting to Gemini..."):
+                with st.spinner("Connecting to Groq..."):
                     explanation = generate_explanation(result, score, risk_level, cv_img)
                 st.markdown(
                     f"""
                 <div class='chat-ai'>
-                    <div class='chat-label' style='color:#00e5ff'>SmartDetect · Gemini</div>
+                    <div class='chat-label' style='color:#00e5ff'>SmartDetect · Groq</div>
                     {explanation}
                 </div>
                 """,
@@ -1251,7 +1091,7 @@ elif page == "📷 Camera":
                             "detected": len(bboxes) > 0,
                             "risk_score": score,
                             "description": f"🔌 [Offline Fallback] OpenCV detected regions matching {cam_detect_mode}.",
-                            "recommendation": "Manual review required. Start Gemini for AI analysis.",
+                            "recommendation": "Manual review required. Start Groq for AI analysis.",
                             "bboxes": bboxes
                         }
                     else:
@@ -1322,14 +1162,14 @@ elif page == "📷 Camera":
                 )
 
         # AI Explanation
-        with st.expander("🤖 Generate AI Explanation (Gemini)", expanded=False):
+        with st.expander("🤖 Generate AI Explanation (Groq)", expanded=False):
             if st.button("✨ Get AI Explanation", key="cam_explain"):
-                with st.spinner("Connecting to Gemini..."):
+                with st.spinner("Connecting to Groq..."):
                     explanation = generate_explanation(result, score, risk_level, cv_img)
                 st.markdown(
                     f"""
                 <div class='chat-ai'>
-                    <div class='chat-label' style='color:#00e5ff'>SmartDetect · Gemini</div>
+                    <div class='chat-label' style='color:#00e5ff'>SmartDetect · Groq</div>
                     {explanation}
                 </div>
                 """,
@@ -1387,7 +1227,10 @@ elif page == "🎬 Video":
                 help="Higher FPS means more detailed analysis but takes longer."
             )
 
-            if st.button("▶️ Analyze Video"):
+            analyze_clicked = st.button("▶️ Analyze Video")
+            vid_cache_key = f"{video_file.name}_{video_file.size}_{max_frames}_{fps_rate}"
+
+            if analyze_clicked:
                 with st.spinner("🎬 Extracting and analyzing frames..."):
                     import tempfile
 
@@ -1399,7 +1242,13 @@ elif page == "🎬 Video":
 
                     frame_results = process_video_frames(tmp_path, max_frames=max_frames, fps_rate=fps_rate)
                     os.unlink(tmp_path)
+                    
+                    st.session_state._vid_cache_key = vid_cache_key
+                    st.session_state._vid_results = frame_results
 
+            if st.session_state.get("_vid_cache_key") == vid_cache_key:
+                frame_results = st.session_state._vid_results
+                
                 if not frame_results:
                     st.error("❌ Could not extract frames. Check video format.")
                 else:
@@ -1461,9 +1310,9 @@ elif page == "🎬 Video":
                     st.line_chart(chart_data, color="#00e5ff")
 
                     # AI Explanation for Video
-                    with st.expander("🤖 Generate AI Summary (Gemini)", expanded=False):
+                    with st.expander("🤖 Generate AI Summary (Groq)", expanded=False):
                         if st.button("✨ Get AI Explanation", key="vid_explain"):
-                            with st.spinner("Connecting to Gemini..."):
+                            with st.spinner("Connecting to Groq..."):
                                 mock_result = {
                                     "anomaly_type": "Video Analysis Peak",
                                     "contour_count": "Multiple frames",
@@ -1475,7 +1324,7 @@ elif page == "🎬 Video":
                             st.markdown(
                                 f"""
                             <div class='chat-ai'>
-                                <div class='chat-label' style='color:#00e5ff'>SmartDetect · Gemini</div>
+                                <div class='chat-label' style='color:#00e5ff'>SmartDetect · Groq</div>
                                 {explanation}
                             </div>
                             """,
@@ -1580,7 +1429,7 @@ elif page == "🎬 Video":
 
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────��───────────────────────────────────────────────────────────────────────
 # PAGE: GEO CHANGE DETECTION
 # ─────────────────────────────────────────────────────────────────────────────
 elif page == "🌍 Geo Change":
@@ -1596,7 +1445,7 @@ elif page == "🌍 Geo Change":
         <p style='font-size:0.85rem; color:#a8c4e0; margin:0; line-height:1.7'>
         Upload two images of the same geographic region taken at different times.
         The system aligns images, generates a change heatmap, extracts candidate regions
-        via OpenCV, and validates each region using <b style='color:#00e5ff'>Gemini vision AI</b>
+        via OpenCV, and validates each region using <b style='color:#00e5ff'>Groq vision AI</b>
         (or CV fallback). Use the confidence slider to filter noise.
         </p>
     </div>
@@ -1651,8 +1500,8 @@ elif page == "🌍 Geo Change":
             )
         else:
             # Detection source badge
-            source_label = "🤖 Gemini Vision AI" if geo_result.get("gemini_used") else "🔬 CV Analysis (Offline)"
-            source_color = "#00e5ff" if geo_result.get("gemini_used") else "#ffab00"
+            source_label = "🤖 Groq Vision AI" if geo_result.get("groq_used") else "🔬 CV Analysis (Offline)"
+            source_color = "#00e5ff" if geo_result.get("groq_used") else "#ffab00"
             st.markdown(
                 f"""
             <div style='display:flex; align-items:center; gap:12px; margin-bottom:1rem; flex-wrap:wrap'>
@@ -1768,16 +1617,16 @@ elif page == "🌍 Geo Change":
                         "change_pct": geo_result["change_pct"],
                         "region_count": geo_result["region_count"],
                         "real_changes": len(real_regions),
-                        "gemini_used": geo_result.get("gemini_used", False),
+                        "groq_used": geo_result.get("groq_used", False),
                     },
                 )
                 invalidate_history_cache()
                 st.session_state["_geo_saved_key"] = geo_save_key
 
             # AI Explanation
-            with st.expander("🤖 Generate AI Explanation (Gemini)", expanded=False):
+            with st.expander("🤖 Generate AI Explanation (Groq)", expanded=False):
                 if st.button("✨ Get AI Explanation", key="geo_explain"):
-                    with st.spinner("Connecting to Gemini..."):
+                    with st.spinner("Connecting to Groq..."):
                         mock_result = {
                             "anomaly_type": "Geographic Change Detection",
                             "contour_count": len(real_regions),
@@ -1789,7 +1638,7 @@ elif page == "🌍 Geo Change":
                     st.markdown(
                         f"""
                     <div class='chat-ai'>
-                        <div class='chat-label' style='color:#00e5ff'>SmartDetect · Gemini</div>
+                        <div class='chat-label' style='color:#00e5ff'>SmartDetect · Groq</div>
                         {explanation}
                     </div>
                     """,
@@ -1809,10 +1658,10 @@ elif page == "🤖 AI Chat":
     st.markdown(
         """
     <div class='section-card'>
-        <div class='section-title'>💬 Powered by Gemini (Local LLM)</div>
+        <div class='section-title'>💬 Powered by Groq (Ultra-Fast AI)</div>
         <p style='font-size:0.85rem; color:#a8c4e0; margin:0; line-height:1.6'>
         Ask questions about anomaly detection, risk levels, or get AI-powered explanations.
-        Connects to your local Gemini instance running Gemini 2.5 Flash or Gemini 2.5 Flash.
+        Connects to Groq's ultra-fast inference engine running Llama 3.3 70B Versatile.
         </p>
     </div>
     """,
@@ -1868,7 +1717,7 @@ elif page == "🤖 AI Chat":
                 st.markdown(
                     f"""
                 <div class='chat-ai'>
-                    <div class='chat-label' style='color:#00e5ff'>SmartDetect · Gemini</div>
+                    <div class='chat-label' style='color:#00e5ff'>SmartDetect · Groq</div>
                     {msg['content']}
                 </div>
                 """,
@@ -1891,7 +1740,7 @@ elif page == "🤖 AI Chat":
                 st.session_state.chat_messages.append(
                     {"role": "user", "content": user_input}
                 )
-                with st.spinner("🤖 Gemini is thinking..."):
+                with st.spinner("🤖 Groq is thinking..."):
                     reply = chat_with_assistant(user_input)
                 st.session_state.chat_messages.append(
                     {"role": "assistant", "content": reply}
@@ -2010,7 +1859,7 @@ elif page == "ℹ️ About":
             <div class='section-title'>🚀 What is SmartDetect?</div>
             <p style='font-size:0.95rem; line-height:1.6; color:#e8f4fd; margin-top:10px;'>
                 <b>SmartDetect</b> is a state-of-the-art AI-powered anomaly detection and computer vision analysis platform. 
-                Built natively on Python and Streamlit, it leverages the cutting-edge <b>Google Gemini API</b> to perform 
+                Built natively on Python and Streamlit, it leverages the cutting-edge <b>Groq API</b> to perform 
                 complex spatial, geographic, and real-time visual analyses with blazing speed.
             </p>
             <p style='font-size:0.95rem; line-height:1.6; color:#e8f4fd; margin-top:10px;'>
@@ -2029,7 +1878,7 @@ elif page == "ℹ️ About":
             <div class='section-title'>🛠️ Core Technologies</div>
             <ul style='font-size:0.95rem; line-height:1.8; color:#e8f4fd; margin-top:10px;'>
                 <li><b>OpenCV</b>: High-performance computer vision for contour mapping, edge detection, and real-time video processing.</li>
-                <li><b>Google Gemini 2.5 Flash</b>: Cloud-hosted LLM and VLM for intelligent structural analysis and deep explanatory text.</li>
+                <li><b>Groq (Llama 3.2 Vision + Llama 3.3 70B)</b>: Ultra-fast AI inference for intelligent structural analysis and deep explanatory text.</li>
                 <li><b>Streamlit</b>: The robust Python framework powering this dynamic, responsive, and data-driven user interface.</li>
                 <li><b>SSIM & CLAHE</b>: Advanced geographic image alignment, histogram matching, and structural similarity calculations.</li>
             </ul>
