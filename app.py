@@ -1845,10 +1845,14 @@ elif page == "ℹ️ About":
         <div class='section-card stagger-2'>
             <div class='section-title'>🛠️ Core Technologies</div>
             <ul style='font-size:0.95rem; line-height:1.8; color:#e8f4fd; margin-top:10px;'>
-                <li><b>OpenCV</b>: High-performance computer vision for contour mapping, edge detection, and real-time video processing.</li>
-                <li><b>Groq (Llama 3.2 Vision + Llama 3.3 70B)</b>: Ultra-fast AI inference for intelligent structural analysis and deep explanatory text.</li>
-                <li><b>Streamlit</b>: The robust Python framework powering this dynamic, responsive, and data-driven user interface.</li>
-                <li><b>SSIM & CLAHE</b>: Advanced geographic image alignment, histogram matching, and structural similarity calculations.</li>
+                <li><b>Python</b>: Core programming language coordinating all modules, data pipelines, and client logic.</li>
+                <li><b>Streamlit</b>: Framework powering the responsive, glassmorphic dark cyber-industrial dashboard.</li>
+                <li><b>OpenCV</b>: Computer vision library for local contour extraction, binarization, and image manipulation.</li>
+                <li><b>Groq AI (Llama 4 & 3.3)</b>: Cloud intelligence for visual spatial reasoning and conversational explanations.</li>
+                <li><b>WebRTC</b>: High-speed real-time streaming pipeline for live webcam CCTV simulations.</li>
+                <li><b>Haar Cascades</b>: CPU-efficient classifiers for quick real-time human face and body detection.</li>
+                <li><b>SSIM & CLAHE</b>: Algorithms for structural similarity analysis and local contrast equalization in LAB space.</li>
+                <li><b>ORB & Homography</b>: Keypoint-matching registration algorithms to perfectly align satellite images.</li>
             </ul>
         </div>
         """,
